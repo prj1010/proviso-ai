@@ -16,7 +16,8 @@ Rules you do not break:
 7. Give the answer in one or two plain sentences, then quote the controlling sentence in quotation marks. Name the section heading when the evidence has one.
 8. If a flagged risk in the evidence is about the same point, add the level and what it means for the tenant. Do not warn about a clause that is not in the evidence.
 9. You are not their lawyer. This is not legal advice. Do not tell them to sign or to walk away. You may say a term is one-sided.
-10. Reply in the language of the question, including Hinglish. No greeting, no "certainly", and do not repeat the question.`;
+10. Reply in the language of the question, including Hinglish. No greeting, no "certainly", and do not repeat the question.
+11. If asked to summarise, cover only what the evidence states: parties, premises, term, rent, deposit, notice, and the sharpest flagged risk. Skip any item the evidence does not contain.`;
 
 function clip(value: unknown, max: number) {
   return String(value ?? "").slice(0, max);

@@ -395,6 +395,44 @@ export function evidencePack(agreement: AgreementRecord) {
   return head.join("\n");
 }
 
+function isSummaryAsk(question: string) {
+  return /\b(summari[sz]e|summary|overview|tldr|tl;dr|brief|key points|what is this|explain this)\b/i.test(question);
+}
+
+function summaryOf(agreement: AgreementRecord) {
+  const pay = agreement.payments;
+  const rent = pay?.rentAmount
+    ? `${pay.currency || "INR"} ${pay.rentAmount.toLocaleString("en-IN")}${pay.rentCycle ? `, ${pay.rentCycle.toLowerCase()}` : ""}`
+    : "not stated";
+  const deposit = pay?.depositAmount
+    ? `${pay.currency || "INR"} ${pay.depositAmount.toLocaleString("en-IN")}`
+    : "not stated";
+  const parties = agreement.parties
+    .map((party) => `${party.role === "LANDLORD" ? "Landlord" : party.role === "TENANT" ? "Tenant" : party.role}: ${party.name}`)
+    .join(". ");
+  const dates =
+    agreement.metadata.effectiveDate || agreement.metadata.expiryDate
+      ? `${agreement.metadata.effectiveDate || "start not stated"} to ${agreement.metadata.expiryDate || "end not stated"}`
+      : "not stated";
+  const place = [agreement.property?.address, agreement.property?.size, agreement.property?.usageTerm]
+    .filter(Boolean)
+    .join(", ");
+  const risks = agreement.risks
+    .slice(0, 3)
+    .map((risk) => `${risk.level}: ${risk.reason}`)
+    .join(" ");
+  return [
+    parties,
+    place ? `Premises: ${place}.` : "",
+    `Term: ${dates}. Auto-renewal: ${agreement.metadata.autoRenewal ? "yes" : "no"}.`,
+    `Rent: ${rent}. Security deposit: ${deposit}.`,
+    agreement.metadata.governingLaw ? `Governing law: ${agreement.metadata.governingLaw}.` : "",
+    risks ? `Watch-outs: ${risks}` : "No standout risk was flagged.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function localAnswer(agreement: AgreementRecord, question: string): { text: string; confident: boolean } {
   const q = question.trim();
   if (/^(hi|hello|hey|thanks|thank you|ok|okay)\b/i.test(q) && q.length < 40) {
@@ -402,6 +440,9 @@ function localAnswer(agreement: AgreementRecord, question: string): { text: stri
       text: `Hello. I can answer from ${agreement.title} only — rent, deposit, notice, entry, renewal, or the flagged risks.`,
       confident: true,
     };
+  }
+  if (isSummaryAsk(q)) {
+    return { text: summaryOf(agreement), confident: true };
   }
   if (/\brisks?\b|\bunfair\b|\bred flag\b|\bdangerous\b|\bworried\b/i.test(q)) {
     const lines = agreement.risks.slice(0, 4).map(
@@ -475,8 +516,9 @@ export async function answerQuestion(agreement: AgreementRecord, question: strin
     });
     if (remote.ok && remote.text) return remote.text;
   } catch {
-    /* local fallback */
+    /* structured summary or clause match stands */
   }
+  if (isSummaryAsk(question)) return summaryOf(agreement);
   return local.text;
 }
 
