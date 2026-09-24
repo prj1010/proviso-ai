@@ -37,7 +37,7 @@ Typed decisions use TypeSafe Jev (`jev-latest`). Jev does not write the answer a
 | Citation | Picks the section that answers the question |
 | Support gate | Blocks Asha when the line is not supported (below 0.6) |
 
-Code owns the thresholds. A trap at 0.75 or above keeps its severity. Between 0.45 and 0.75 it stays on watch. A severe score with confidence under 0.45 is not marked critical. Risks Jev scored show a JEV badge. Without the key, the keyword reader still runs.
+With `TYPESAFE_API_KEY` set, judged clauses drop the keyword flag and keep only the Jev decision. A question is answered only when a section clears 0.55. Groq may phrase that section, and only if support is at least 0.6. Below that, or if Jev returns no typed answer, Asha does not read it. Without the key, the keyword reader still runs.
 
 ## Render
 

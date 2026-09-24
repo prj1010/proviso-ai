@@ -125,12 +125,18 @@ export function VoiceCounsel() {
                 evidence: (agreement.sourceText || agreement.summary.join(" ")).slice(0, 4000),
               },
             });
-            if (check.ok && check.noul < 0.6) {
+            if (!check.ok) {
+              if (check.code === "unconfigured") await speak(spoken);
+              else await speak("I will not read this aloud. Jev did not return a support decision.");
+              return;
+            }
+            if (check.noul < 0.6) {
               await speak("I am not confident this briefing stays inside the lease, so I will not read it aloud. The risks tab has the flagged clauses.");
               return;
             }
           } catch {
-            /* speak the local brief */
+            await speak("I will not read this aloud. Jev did not return a support decision.");
+            return;
           }
           await speak(spoken);
         })();

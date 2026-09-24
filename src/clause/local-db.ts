@@ -454,11 +454,24 @@ function extraTokens(q: string) {
   return out;
 }
 
-export async function answerQuestion(agreement: AgreementRecord, question: string) {
-  let local = localAnswer(agreement, question);
-  let evidence = evidencePack(agreement);
+async function answerWithoutJev(agreement: AgreementRecord, question: string) {
+  const local = localAnswer(agreement, question);
+  if (local.confident && !HINGLISH.test(question)) return local.text;
   try {
-    const cited = await citeSections({
+    const remote = await counselAnswer({
+      data: { question, evidence: evidencePack(agreement), title: agreement.title },
+    });
+    if (remote.ok) return remote.text;
+  } catch {
+    /* local fallback */
+  }
+  return local.text;
+}
+
+export async function answerQuestion(agreement: AgreementRecord, question: string) {
+  let cited: Awaited<ReturnType<typeof citeSections>>;
+  try {
+    cited = await citeSections({
       data: {
         question,
         sections: agreement.sections.slice(0, 10).map((s) => ({
@@ -468,40 +481,39 @@ export async function answerQuestion(agreement: AgreementRecord, question: strin
         })),
       },
     });
-    if (cited.ok && cited.ref) {
-      const section = agreement.sections.find((s) => s.ref === cited.ref);
-      if (section) {
-        evidence = `${section.ref} ${section.heading}: ${section.content}`;
-        local = {
-          text: `According to ${section.ref} (${section.heading}): ${section.content}`,
-          confident: cited.noul >= 0.7 && !HINGLISH.test(question),
-        };
-      }
-    }
   } catch {
-    /* keyword citation stands */
+    return "Jev did not return a citation, so this question was not answered from the lease.";
   }
-
-  const wantsModel = !local.confident || HINGLISH.test(question);
-  let text = local.text;
-  if (wantsModel) {
+  if (!cited.ok) {
+    if (cited.code === "unconfigured") return answerWithoutJev(agreement, question);
+    return "Jev did not return a citation, so this question was not answered from the lease.";
+  }
+  if (!cited.ref) {
+    return "This agreement does not address that directly. Jev found no section above the citation threshold.";
+  }
+  const section = agreement.sections.find((s) => s.ref === cited.ref);
+  if (!section) return "Jev cited a section that is not on this agreement.";
+  const quoted = `According to ${section.ref} (${section.heading}): ${section.content}`;
+  const evidence = `${section.ref} ${section.heading}: ${section.content}`;
+  let text = quoted;
+  if (HINGLISH.test(question) || cited.noul < 0.7) {
     try {
       const remote = await counselAnswer({
         data: { question, evidence, title: agreement.title },
       });
       if (remote.ok) text = remote.text;
     } catch {
-      /* local fallback */
+      text = quoted;
     }
   }
-
+  let check: Awaited<ReturnType<typeof supportClaim>>;
   try {
-    const check = await supportClaim({ data: { claim: text, evidence } });
-    if (check.ok && check.noul < 0.6) {
-      text += "\n\nUnverified: the cited wording may not support this, so it should not be read aloud.";
-    }
+    check = await supportClaim({ data: { claim: text, evidence } });
   } catch {
-    /* speak anyway when Jev is down */
+    check = { ok: false, code: "rejected", error: "Support check failed." };
+  }
+  if (!check.ok || check.noul < 0.6) {
+    return `${quoted}\n\nUnverified: the cited wording may not support a paraphrase, so it should not be read aloud.`;
   }
   return text;
 }
@@ -655,44 +667,55 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
   };
 }
 
-async function applyJev<T extends { sections: ClauseSection[]; risks: RiskItem[] }>(draft: T): Promise<T> {
+async function applyJev<T extends { sections: ClauseSection[]; risks: RiskItem[]; summary?: string[] }>(draft: T): Promise<T> {
   if (!draft.sections.length) return draft;
+  let judged: Awaited<ReturnType<typeof judgeClauses>>;
   try {
-    const judged = await judgeClauses({
+    judged = await judgeClauses({
       data: {
         sections: draft.sections.slice(0, 8).map((s) => ({ ref: s.ref, content: s.content })),
       },
     });
-    if (!judged.ok) return draft;
-    const risks = draft.risks.filter((r) => r.source !== "jev");
-    const covered = new Set<string>();
-    for (const judgment of judged.judgments) {
-      const decision = decisionFromJudgment(judgment);
-      const section = draft.sections.find((s) => s.ref === judgment.ref);
-      if (!section) continue;
-      if (decision.type) {
-        section.type = decision.type;
-        section.heading = getClauseTypeDisplayLabel(decision.type);
-      }
-      if (!decision.level || decision.level === "LOW") continue;
-      covered.add(section.content.slice(0, 500));
-      risks.push({
-        id: uid(),
-        level: decision.level,
-        clause: section.content.slice(0, 500),
-        reason: decision.reason,
-        source: "jev",
-      });
-    }
-    const rank: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-    draft.risks = [
-      ...risks.filter((r) => r.source === "jev" || !covered.has(r.clause)),
-    ]
-      .sort((a, b) => rank[a.level] - rank[b.level])
-      .slice(0, 8);
   } catch {
-    /* heuristic risks stand */
+    return draft;
   }
+  if (!judged.ok) {
+    if (judged.code !== "unconfigured" && draft.summary) {
+      draft.summary = [
+        ...draft.summary,
+        "Jev did not return a decision. These flags are the local reader, not a Jev score.",
+      ].slice(0, 8);
+    }
+    return draft;
+  }
+  const judgedClause = new Set<string>();
+  const jevRisks: RiskItem[] = [];
+  for (const judgment of judged.judgments) {
+    const decision = decisionFromJudgment(judgment);
+    const section = draft.sections.find((s) => s.ref === judgment.ref);
+    if (!section) continue;
+    const clause = section.content.slice(0, 500);
+    judgedClause.add(clause);
+    if (decision.type) {
+      section.type = decision.type;
+      section.heading = getClauseTypeDisplayLabel(decision.type);
+    }
+    if (!decision.level || decision.level === "LOW") continue;
+    jevRisks.push({
+      id: uid(),
+      level: decision.level,
+      clause,
+      reason: decision.reason,
+      source: "jev",
+    });
+  }
+  const rank: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+  draft.risks = [
+    ...draft.risks.filter((r) => r.source !== "jev" && !judgedClause.has(r.clause)),
+    ...jevRisks,
+  ]
+    .sort((a, b) => rank[a.level] - rank[b.level])
+    .slice(0, 8);
   return draft;
 }
 
