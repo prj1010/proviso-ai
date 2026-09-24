@@ -1,5 +1,6 @@
 import { extractPdfText } from "@/clause/pdf";
 import { markitdownConvert } from "@/clause/markitdown.functions";
+import { readPlainText } from "@/clause/read-text";
 
 const TEXT_EXT = new Set(["txt", "text", "md", "csv", "log"]);
 
@@ -10,7 +11,7 @@ export function extensionOf(name: string) {
 export function isSupportedDocument(file: File) {
   const ext = extensionOf(file.name);
   if (["pdf", "doc", "docx", "txt", "text", "md", "csv", "rtf"].includes(ext)) return true;
-  const type = file.type.toLowerCase();
+  const type = String(file.type || "").toLowerCase();
   return (
     type === "application/pdf" ||
     type === "application/msword" ||
@@ -23,19 +24,20 @@ export function isSupportedDocument(file: File) {
 
 export function mimeForFile(file: File) {
   const ext = extensionOf(file.name);
-  if (ext === "pdf" || file.type === "application/pdf") return "application/pdf";
-  if (ext === "docx" || file.type.includes("wordprocessingml")) {
+  const type = String(file.type || "");
+  if (ext === "pdf" || type === "application/pdf") return "application/pdf";
+  if (ext === "docx" || type.includes("wordprocessingml")) {
     return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   }
-  if (ext === "doc" || file.type === "application/msword") return "application/msword";
+  if (ext === "doc" || type === "application/msword") return "application/msword";
   if (ext === "rtf") return "application/rtf";
-  if (TEXT_EXT.has(ext) || file.type.startsWith("text/")) return "text/plain";
-  return file.type || "application/octet-stream";
+  if (TEXT_EXT.has(ext) || type.startsWith("text/")) return "text/plain";
+  return type || "application/octet-stream";
 }
 
 export async function extractDocumentText(file: File): Promise<string> {
   const ext = extensionOf(file.name);
-  const type = file.type.toLowerCase();
+  const type = String(file.type || "").toLowerCase();
   const data = await file.arrayBuffer();
   let local = "";
   let failure = "Could not read that file.";
@@ -44,22 +46,11 @@ export async function extractDocumentText(file: File): Promise<string> {
   } catch (err) {
     failure = err instanceof Error ? err.message : failure;
   }
-  const office =
-    ext === "pdf" ||
-    ext === "doc" ||
-    ext === "docx" ||
-    type === "application/pdf" ||
-    type === "application/msword" ||
-    type.includes("word");
+  const textLike = TEXT_EXT.has(ext) || ext === "rtf" || type.startsWith("text/");
   const thin = local.trim().length < 80;
-  if (office && (thin || ext === "doc" || type === "application/msword")) {
+  if (thin || ext === "doc" || type === "application/msword" || (textLike && !/[A-Za-z]{8,}/.test(local))) {
     const converted = await fromMarkitdown(file.name, data);
-    if (
-      converted &&
-      (ext === "doc" || type === "application/msword" || converted.trim().length > local.trim().length)
-    ) {
-      return converted;
-    }
+    if (converted.trim().length > local.trim().length) return converted;
   }
   if (local.trim()) return local;
   throw new Error(failure);
@@ -69,8 +60,8 @@ async function extractLocal(ext: string, type: string, data: ArrayBuffer) {
   if (ext === "pdf" || type === "application/pdf") return extractPdfText(data);
   if (ext === "docx" || type.includes("wordprocessingml")) return extractDocx(data);
   if (ext === "doc" || type === "application/msword") return extractLegacyDoc(data);
-  if (ext === "rtf" || type === "application/rtf" || type === "text/rtf") return rtfToText(decodeText(data));
-  if (TEXT_EXT.has(ext) || type.startsWith("text/")) return decodeText(data);
+  if (ext === "rtf" || type === "application/rtf" || type === "text/rtf") return rtfToText(readPlainText(data));
+  if (TEXT_EXT.has(ext) || type.startsWith("text/")) return readPlainText(data);
   throw new Error("Use a PDF, Word document (.doc or .docx), or a text file.");
 }
 
@@ -137,28 +128,11 @@ function utf16Runs(bytes: Uint8Array) {
 }
 
 function rtfToText(raw: string) {
-  return raw
+  return String(raw ?? "")
     .replace(/\\par[d]?/g, "\n")
     .replace(/\\'[0-9a-fA-F]{2}/g, (hex) => String.fromCharCode(parseInt(hex.slice(2), 16)))
     .replace(/\\[a-z]+-?\d* ?/gi, "")
     .replace(/[{}]/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function decodeText(data: ArrayBuffer) {
-  const bytes = new Uint8Array(data);
-  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
-    return new TextDecoder("utf-16le").decode(bytes).replace(/^\uFEFF/, "").trim();
-  }
-  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    return new TextDecoder("utf-16be").decode(bytes).replace(/^\uFEFF/, "").trim();
-  }
-  let zeroPairs = 0;
-  const sample = Math.min(bytes.length, 200);
-  for (let i = 1; i < sample; i += 2) if (bytes[i] === 0) zeroPairs += 1;
-  if (sample > 20 && zeroPairs > sample / 4) {
-    return new TextDecoder("utf-16le").decode(bytes).replace(/^\uFEFF/, "").trim();
-  }
-  return new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/^\uFEFF/, "").trim();
 }
