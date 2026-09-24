@@ -40,7 +40,7 @@ If you already have `TYPESAFE_API_KEY`, Jev can add a **JEV** badge on a clause 
 2. Set `GROQ_API_KEY` when the dashboard asks for it. `TYPESAFE_API_KEY` is optional and not required.
 3. Deploy. The build is `npm ci && npm run build`. The start command is `npm start`.
 
-Render sets `RENDER=true`. That switches the production server to Node and binds it to `PORT`. Agreements stay in the browser. No database is required.
+The Blueprint uses Render's free web service. It sleeps after 15 minutes with no traffic, and the next visit wakes it.
 
 ## What it does not do
 

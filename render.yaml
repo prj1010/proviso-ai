@@ -4,7 +4,7 @@ services:
   - type: web
     name: proviso-ai
     runtime: node
-    plan: starter
+    plan: free
     region: singapore
     branch: main
     autoDeploy: true
