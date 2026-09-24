@@ -111,6 +111,17 @@ export function loadDb(): Database {
   }
 }
 
+let writeChain: Promise<unknown> = Promise.resolve();
+
+function withLeaseLock<T>(fn: () => T | Promise<T>): Promise<T> {
+  const run = writeChain.then(fn, fn);
+  writeChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 function save(db: Database) {
   if (typeof window === "undefined") return;
   localStorage.setItem(KEY, JSON.stringify(db));
@@ -735,30 +746,34 @@ export function getAgreement(id: string) {
 }
 
 export async function ask(agreementId: string, message: string) {
-  const db = loadDb();
-  const agreement = db.agreements.find((a) => a.id === agreementId);
-  if (!agreement) throw new Error("Agreement not found");
-  const userMessage: ChatMessage = {
-    id: uid(),
-    chatId: agreement.chatId,
-    role: "user",
-    content: message,
-    createdAt: new Date().toISOString(),
-  };
-  const text = await answerQuestion(agreement, message);
-  const queryId = uid();
-  const assistant: ChatMessage = {
-    id: uid(),
-    chatId: agreement.chatId,
-    role: "assistant",
-    content: text,
-    createdAt: new Date().toISOString(),
-    queryId,
-  };
-  agreement.messages.push(userMessage, assistant);
-  agreement.updatedAt = new Date().toISOString();
-  save(db);
-  return { queryId, userMessage, message: assistant };
+  const snapshot = getAgreement(agreementId);
+  if (!snapshot) throw new Error("Agreement not found");
+  const text = await answerQuestion(snapshot, message);
+  return withLeaseLock(() => {
+    const db = loadDb();
+    const agreement = db.agreements.find((a) => a.id === agreementId);
+    if (!agreement) throw new Error("Agreement not found");
+    const userMessage: ChatMessage = {
+      id: uid(),
+      chatId: agreement.chatId,
+      role: "user",
+      content: message,
+      createdAt: new Date().toISOString(),
+    };
+    const queryId = uid();
+    const assistant: ChatMessage = {
+      id: uid(),
+      chatId: agreement.chatId,
+      role: "assistant",
+      content: text,
+      createdAt: new Date().toISOString(),
+      queryId,
+    };
+    agreement.messages.push(userMessage, assistant);
+    agreement.updatedAt = new Date().toISOString();
+    save(db);
+    return { queryId, userMessage, message: assistant };
+  });
 }
 
 export function readQuery(queryId: string) {
@@ -780,38 +795,51 @@ export function listFiles() {
 }
 
 export async function ingestExtracted(fileName: string, text: string) {
-  const db = loadDb();
-  const fileId = uid();
-  const now = new Date().toISOString();
-  db.files.unshift({
-    id: fileId,
-    fileName,
-    mimeType: "application/pdf",
-    status: "UPLOADED",
-    createdAt: now,
-  });
   const analyzed = await applyJev(analyzeText(fileName, text));
-  const agreement: AgreementRecord = {
-    ...analyzed,
-    id: uid(),
-    fileId,
-    chatId: uid(),
-    messages: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  db.agreements.unshift(agreement);
-  save(db);
-  return agreement;
+  return withLeaseLock(() => {
+    const db = loadDb();
+    const fileId = uid();
+    const now = new Date().toISOString();
+    db.files.unshift({
+      id: fileId,
+      fileName,
+      mimeType: "application/pdf",
+      status: "UPLOADED",
+      createdAt: now,
+    });
+    const agreement: AgreementRecord = {
+      ...analyzed,
+      id: uid(),
+      fileId,
+      chatId: uid(),
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.agreements.unshift(agreement);
+    save(db);
+    return agreement;
+  });
 }
 
 export async function reprocess(agreementId: string) {
-  const db = loadDb();
-  const agreement = db.agreements.find((a) => a.id === agreementId);
-  if (!agreement) return;
-  const next = await applyJev(analyzeText(agreement.title + ".pdf", agreement.sourceText || ""));
-  Object.assign(agreement, next, { updatedAt: new Date().toISOString() });
-  save(db);
+  const current = getAgreement(agreementId);
+  if (!current) return;
+  const next = await applyJev(analyzeText(current.title + ".pdf", current.sourceText || ""));
+  await withLeaseLock(() => {
+    const db = loadDb();
+    const agreement = db.agreements.find((a) => a.id === agreementId);
+    if (!agreement) return;
+    Object.assign(agreement, next, {
+      id: agreement.id,
+      fileId: agreement.fileId,
+      chatId: agreement.chatId,
+      messages: agreement.messages,
+      createdAt: agreement.createdAt,
+      updatedAt: new Date().toISOString(),
+    });
+    save(db);
+  });
 }
 
 export function resetWorkspace() {

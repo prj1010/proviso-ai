@@ -15,107 +15,112 @@ interface FileUploadModalProps {
     onUploadComplete: () => void;
 }
 
+type JobStatus = "queued" | "reading" | "done" | "failed";
+
+interface UploadJob {
+    id: string;
+    file: File;
+    status: JobStatus;
+    detail: string;
+}
+
+const READ_AT_ONCE = 2;
+
+function isPdf(file: File) {
+    return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function jobId() {
+    return crypto.randomUUID?.() ?? `job-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     isOpen,
     onClose,
     onUploadComplete,
 }) => {
-    const [file, setFile] = useState<File | null>(null);
+    const [jobs, setJobs] = useState<UploadJob[]>([]);
     const [uploading, setUploading] = useState(false);
-    const [stepStatus, setStepStatus] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     if (!isOpen) return null;
 
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFile = e.target.files?.[0];
-        if (!selectedFile) return;
-
-        if (
-            selectedFile.type !== "application/pdf" &&
-            !selectedFile.name.toLowerCase().endsWith(".pdf")
-        ) {
-            setError(
-                "Only PDF agreements are supported. Please select a .pdf file.",
-            );
-            setFile(null);
+    const addFiles = (list: FileList | File[]) => {
+        const incoming = Array.from(list);
+        const pdfs = incoming.filter(isPdf);
+        const skipped = incoming.length - pdfs.length;
+        if (!pdfs.length) {
+            setError("Only PDF agreements are supported. Please select a .pdf file.");
             return;
         }
-
-        setError(null);
-        setFile(selectedFile);
+        setError(skipped ? `${skipped} file${skipped === 1 ? "" : "s"} skipped. Only PDFs are read.` : null);
+        setJobs((prev) => [
+            ...prev,
+            ...pdfs.map((file) => ({
+                id: jobId(),
+                file,
+                status: "queued" as const,
+                detail: "Waiting. This lease is separate from the others.",
+            })),
+        ]);
     };
 
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        const droppedFile = e.dataTransfer.files?.[0];
-        if (!droppedFile) return;
-
-        if (
-            droppedFile.type !== "application/pdf" &&
-            !droppedFile.name.toLowerCase().endsWith(".pdf")
-        ) {
-            setError(
-                "Only PDF agreements are supported. Please select a .pdf file.",
-            );
-            setFile(null);
-            return;
-        }
-
-        setError(null);
-        setFile(droppedFile);
+    const patchJob = (id: string, partial: Partial<UploadJob>) => {
+        setJobs((prev) => prev.map((job) => (job.id === id ? { ...job, ...partial } : job)));
     };
 
     const handleStartUpload = async () => {
-        if (!file) return;
-
+        const pending = jobs.filter((job) => job.status === "queued" || job.status === "failed");
+        if (!pending.length) return;
         setUploading(true);
         setError(null);
-
-        try {
-            setStepStatus("Reading the PDF and reviewing clauses in one pass...");
-            const processRes = await fileService.ingestPdfFile(file);
-            if (!processRes.success) {
-                throw new Error(processRes.error || "Failed to read that PDF.");
+        let cursor = 0;
+        const worker = async () => {
+            while (cursor < pending.length) {
+                const job = pending[cursor];
+                cursor += 1;
+                patchJob(job.id, { status: "reading", detail: "Reading this PDF on its own." });
+                const res = await fileService.ingestPdfFile(job.file);
+                if (!res.success) {
+                    patchJob(job.id, {
+                        status: "failed",
+                        detail: res.error || "Could not read this PDF.",
+                    });
+                    continue;
+                }
+                patchJob(job.id, {
+                    status: "done",
+                    detail:
+                        res.data?.status === "FAILED"
+                            ? "Saved, but this PDF had no selectable text."
+                            : `Saved as its own ${res.data?.title || "lease"}.`,
+                });
             }
-            setStepStatus(
-                processRes.data?.status === "FAILED"
-                    ? "Uploaded, but the PDF had no selectable text."
-                    : "Agreement reviewed.",
-            );
-            setTimeout(() => {
-                setUploading(false);
-                onUploadComplete();
-                handleClose();
-            }, 1000);
-        } catch (err: any) {
-            setUploading(false);
-            setStepStatus(null);
-            setError(err.message || "Failed to read that PDF. Please try again.");
-        }
+        };
+        await Promise.all(
+            Array.from({ length: Math.min(READ_AT_ONCE, pending.length) }, () => worker()),
+        );
+        setUploading(false);
+        onUploadComplete();
     };
 
     const handleClose = () => {
         if (uploading) return;
-        setFile(null);
+        setJobs([]);
         setError(null);
-        setStepStatus(null);
         onClose();
     };
+
+    const ready = jobs.some((job) => job.status === "queued" || job.status === "failed");
 
     return (
         <div className="modal-overlay" onClick={handleClose}>
             <div
                 className="modal-content"
                 onClick={(e) => e.stopPropagation()}
-                style={{ maxWidth: "500px", width: "100%" }}
+                style={{ maxWidth: "560px", width: "100%" }}
             >
-                {/* Modal Body */}
                 <p
                     style={{
                         fontSize: "0.88rem",
@@ -124,11 +129,10 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                         lineHeight: 1.5,
                     }}
                 >
-                    Upload your rental agreement, commercial lease, or tenant
-                    contract in PDF format.
+                    Upload house, office, and shop leases together. Each PDF is read on its own
+                    and saved as its own agreement. One failure does not touch the others.
                 </p>
 
-                {/* Error Alert */}
                 {error && (
                     <div
                         style={{
@@ -149,187 +153,133 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     </div>
                 )}
 
-                {/* Dropzone Area */}
-                {!file ? (
-                    <div
-                        className="dropzone"
-                        onDragOver={handleDragOver}
-                        onDrop={handleDrop}
-                        onClick={() => fileInputRef.current?.click()}
-                    >
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".pdf,application/pdf"
-                            style={{ display: "none" }}
-                            onChange={handleFileSelect}
-                        />
-
-                        <div
-                            style={{
-                                width: "48px",
-                                height: "48px",
-                                borderRadius: "14px",
-                                background: "#0F172A",
-                                color: "#fff",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                margin: "0 auto 14px auto",
-                                boxShadow: "0 2px 8px rgba(15, 23, 42, 0.15)",
-                            }}
-                        >
-                            <IconFilePdf size={24} />
-                        </div>
-
-                        <div
-                            style={{
-                                fontWeight: 600,
-                                fontSize: "0.95rem",
-                                color: "#0F172A",
-                                marginBottom: "4px",
-                            }}
-                        >
-                            Click to upload or drag & drop
-                        </div>
-                        <div style={{ fontSize: "0.8rem", color: "#94A3B8" }}>
-                            PDF documents up to 25MB
-                        </div>
-                    </div>
-                ) : (
+                <div
+                    className="dropzone"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        if (!uploading && e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
+                    }}
+                    onClick={() => {
+                        if (!uploading) fileInputRef.current?.click();
+                    }}
+                    style={{ marginBottom: jobs.length ? "16px" : undefined, opacity: uploading ? 0.6 : 1 }}
+                >
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        multiple
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                            if (e.target.files?.length) addFiles(e.target.files);
+                            e.target.value = "";
+                        }}
+                    />
                     <div
                         style={{
-                            padding: "16px",
-                            borderRadius: "12px",
-                            background: "#F8FAFC",
-                            border: "1px solid var(--border-medium)",
+                            width: "48px",
+                            height: "48px",
+                            borderRadius: "14px",
+                            background: "#0F172A",
+                            color: "#fff",
                             display: "flex",
                             alignItems: "center",
-                            justifyContent: "space-between",
-                            marginBottom: "20px",
+                            justifyContent: "center",
+                            margin: "0 auto 14px auto",
+                            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.15)",
                         }}
                     >
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "12px",
-                                overflow: "hidden",
-                            }}
-                        >
+                        <IconFilePdf size={24} />
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: "0.95rem", color: "#0F172A", marginBottom: "4px" }}>
+                        Click to upload or drag & drop
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "#94A3B8" }}>
+                        One or more PDFs, up to 25MB each
+                    </div>
+                </div>
+
+                {jobs.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
+                        {jobs.map((job) => (
                             <div
+                                key={job.id}
                                 style={{
-                                    width: "36px",
-                                    height: "36px",
-                                    borderRadius: "8px",
-                                    background: "#FEF2F2",
-                                    border: "1px solid #FEE2E2",
+                                    padding: "12px 14px",
+                                    borderRadius: "12px",
+                                    background: "#F8FAFC",
+                                    border: "1px solid var(--border-medium)",
                                     display: "flex",
                                     alignItems: "center",
-                                    justifyContent: "center",
-                                    color: "#DC2626",
-                                    flexShrink: 0,
+                                    justifyContent: "space-between",
+                                    gap: "12px",
                                 }}
                             >
-                                <IconFilePdf size={20} />
-                            </div>
-                            <div style={{ overflow: "hidden" }}>
-                                <div
-                                    style={{
-                                        fontWeight: 600,
-                                        fontSize: "0.88rem",
-                                        color: "#0F172A",
-                                        whiteSpace: "nowrap",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                    }}
-                                    title={file.name}
-                                >
-                                    {file.name}
+                                <div style={{ display: "flex", alignItems: "center", gap: "12px", overflow: "hidden" }}>
+                                    <div style={{ flexShrink: 0, color: job.status === "failed" ? "#DC2626" : "#0F172A" }}>
+                                        {job.status === "reading" ? (
+                                            <InlineSpinner size={16} />
+                                        ) : job.status === "done" ? (
+                                            <IconCheck size={16} />
+                                        ) : job.status === "failed" ? (
+                                            <IconAlertTriangle size={16} />
+                                        ) : (
+                                            <IconFilePdf size={16} />
+                                        )}
+                                    </div>
+                                    <div style={{ overflow: "hidden" }}>
+                                        <div
+                                            style={{
+                                                fontWeight: 600,
+                                                fontSize: "0.86rem",
+                                                color: "#0F172A",
+                                                whiteSpace: "nowrap",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                            }}
+                                            title={job.file.name}
+                                        >
+                                            {job.file.name}
+                                        </div>
+                                        <div style={{ fontSize: "0.75rem", color: "#64748B" }}>{job.detail}</div>
+                                    </div>
                                 </div>
-                                <div
-                                    style={{
-                                        fontSize: "0.75rem",
-                                        color: "#64748B",
-                                    }}
-                                >
-                                    {(file.size / (1024 * 1024)).toFixed(2)} MB
-                                    &bull; Ready to process
-                                </div>
+                                {!uploading && job.status !== "done" && (
+                                    <button
+                                        onClick={() => setJobs((prev) => prev.filter((item) => item.id !== job.id))}
+                                        className="btn btn-ghost btn-sm"
+                                        aria-label={`Remove ${job.file.name}`}
+                                        style={{ padding: "4px", color: "#94A3B8" }}
+                                        type="button"
+                                    >
+                                        <IconClose size={16} />
+                                    </button>
+                                )}
                             </div>
-                        </div>
-
-                        {!uploading && (
-                            <button
-                                onClick={() => setFile(null)}
-                                className="btn btn-ghost btn-sm"
-                                aria-label="Remove selected file"
-                                style={{ padding: "4px", color: "#94A3B8" }}
-                            >
-                                <IconClose size={16} />
-                            </button>
-                        )}
+                        ))}
                     </div>
                 )}
 
-                {/* Pipeline Step Status */}
-                {stepStatus && (
-                    <div
-                        style={{
-                            padding: "10px 14px",
-                            borderRadius: "8px",
-                            background: "var(--pastel-blue-bg)",
-                            border: "1px solid var(--pastel-blue-border)",
-                            color: "var(--pastel-blue-text)",
-                            fontSize: "0.82rem",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            marginBottom: "18px",
-                        }}
-                    >
-                        {uploading ? (
-                            <InlineSpinner size={14} />
-                        ) : (
-                            <IconCheck size={14} />
-                        )}
-                        <span>{stepStatus}</span>
-                    </div>
-                )}
-
-                {/* Modal Actions */}
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "flex-end",
-                        gap: "10px",
-                        marginTop: "24px",
-                    }}
-                >
-                    <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={handleClose}
-                        disabled={uploading}
-                    >
-                        Cancel
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={handleClose} disabled={uploading}>
+                        {jobs.some((job) => job.status === "done") && !uploading ? "Done" : "Cancel"}
                     </button>
-
                     <button
                         type="button"
                         className="btn btn-primary btn-sm"
-                        onClick={handleStartUpload}
-                        disabled={!file || uploading}
+                        onClick={() => void handleStartUpload()}
+                        disabled={!ready || uploading}
                     >
                         {uploading ? (
                             <>
                                 <InlineSpinner size={14} />
-                                <span>Processing PDF...</span>
+                                <span>Reading separately...</span>
                             </>
                         ) : (
                             <>
                                 <IconUploadCloud size={14} />
-                                <span>Upload Document</span>
+                                <span>{jobs.length > 1 ? `Review ${jobs.filter((j) => j.status !== "done").length} leases` : "Upload Document"}</span>
                             </>
                         )}
                     </button>
