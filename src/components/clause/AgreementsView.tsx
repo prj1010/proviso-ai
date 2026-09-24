@@ -1,4 +1,4 @@
-import { AgreementSummaryItem } from "@/services/agreement.service";
+import { removeAgreement, type AgreementSummaryItem } from "@/services/agreement.service";
 import {
     getAgreementStatusDisplayLabel,
     getAgreementTypeDisplayLabel,
@@ -36,6 +36,18 @@ export const AgreementsView: React.FC<AgreementsViewProps> = ({
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("ALL");
+
+    const handleDelete = async (item: AgreementSummaryItem) => {
+        const title = item.title || "this lease";
+        if (!window.confirm(`Delete ${title}? Its file and chat history go with it. Other leases stay.`)) return;
+        const res = await removeAgreement(item.id);
+        if (!res.success) return;
+        if (selectedAgreement?.id === item.id) {
+            setIsDetailOpen(false);
+            setSelectedAgreement(null);
+        }
+        onRefresh();
+    };
 
     const formatDate = (dateStr?: string) => {
         if (!dateStr) return "—";
@@ -424,16 +436,29 @@ export const AgreementsView: React.FC<AgreementsViewProps> = ({
                                         </td>
 
                                         <td style={{ textAlign: "right" }}>
-                                            <button
-                                                className="btn btn-secondary btn-sm"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleOpenDetail(item);
-                                                }}
-                                                style={{ padding: "5px 10px" }}
-                                            >
-                                                <IconEye size={13} /> View
-                                            </button>
+                                            <div style={{ display: "inline-flex", gap: "6px" }}>
+                                                <button
+                                                    className="btn btn-secondary btn-sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleOpenDetail(item);
+                                                    }}
+                                                    style={{ padding: "5px 10px" }}
+                                                >
+                                                    <IconEye size={13} /> View
+                                                </button>
+                                                <button
+                                                    className="btn btn-secondary btn-sm"
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        void handleDelete(item);
+                                                    }}
+                                                    style={{ padding: "5px 10px", color: "#b91c1c" }}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -511,13 +536,34 @@ export const AgreementsView: React.FC<AgreementsViewProps> = ({
 
                                     <button
                                         className="btn btn-secondary btn-sm"
+                                        type="button"
                                         style={{
                                             width: "100%",
                                             justifyContent: "center",
                                         }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenDetail(item);
+                                        }}
                                     >
                                         <IconEye size={14} /> Open Agreement
                                         Details
+                                    </button>
+                                    <button
+                                        className="btn btn-secondary btn-sm"
+                                        type="button"
+                                        style={{
+                                            width: "100%",
+                                            justifyContent: "center",
+                                            marginTop: "8px",
+                                            color: "#b91c1c",
+                                        }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleDelete(item);
+                                        }}
+                                    >
+                                        Delete lease and history
                                     </button>
                                 </div>
                             ))}

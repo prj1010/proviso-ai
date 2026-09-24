@@ -18,6 +18,7 @@ interface AgreementChatTabProps {
     chatBottomRef: React.RefObject<any>;
     onLoadOlder: () => void;
     onSendMessage: (e: React.FormEvent) => void;
+    onClearHistory?: () => void;
 }
 
 export const AgreementChatTab: React.FC<AgreementChatTabProps> = ({
@@ -36,6 +37,7 @@ export const AgreementChatTab: React.FC<AgreementChatTabProps> = ({
     chatBottomRef,
     onLoadOlder,
     onSendMessage,
+    onClearHistory,
 }) => {
     const formatMessageDate = (dateStr?: string) => {
         if (!dateStr) return "";
@@ -67,6 +69,18 @@ export const AgreementChatTab: React.FC<AgreementChatTabProps> = ({
                 height: "100%",
             }}
         >
+            {chatMessages.length > 0 && onClearHistory && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={onClearHistory}
+                        style={{ color: "#b91c1c" }}
+                    >
+                        Clear chat history
+                    </button>
+                </div>
+            )}
             <div
                 ref={chatScrollRef}
                 style={{

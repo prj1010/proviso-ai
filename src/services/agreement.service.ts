@@ -1,5 +1,5 @@
 import { ok, fail, type ApiResponse } from "@/lib/api-envelope";
-import { ask, chatPage, getAgreement, listAgreements, readQuery, reprocess } from "@/clause/local-db";
+import { ask, chatPage, clearChat, deleteAgreement, getAgreement, listAgreements, readQuery, reprocess } from "@/clause/local-db";
 
 export interface AgreementSummaryItem {
   id: string;
@@ -48,6 +48,18 @@ export interface GetChatMessagesResponse {
   messages: ChatMessage[];
   nextCursor: string | null;
 }
+
+export const removeAgreement = async (id: string): Promise<ApiResponse<{ removed: boolean }>> => {
+  const removed = await deleteAgreement(id);
+  if (!removed) return fail("Agreement not found", 404);
+  return ok({ removed: true });
+};
+
+export const clearAgreementChat = async (id: string): Promise<ApiResponse<{ cleared: boolean }>> => {
+  const cleared = await clearChat(id);
+  if (!cleared) return fail("Agreement not found", 404);
+  return ok({ cleared: true });
+};
 
 export const getUserAgreements = async (): Promise<ApiResponse<GetUserAgreementsResponse>> => {
   return ok({ agreements: listAgreements() });

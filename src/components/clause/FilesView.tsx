@@ -1,4 +1,4 @@
-import { UserFileItem } from "@/services/file.service";
+import { removeFile, type UserFileItem } from "@/services/file.service";
 import { getFileStatusDisplayLabel } from "@/clause/constants";
 import React from "react";
 import {
@@ -22,6 +22,13 @@ export const FilesView: React.FC<FilesViewProps> = ({
     onRefresh,
     onOpenUploadModal,
 }) => {
+    const handleDelete = async (file: UserFileItem) => {
+        const name = file.fileName || "this file";
+        if (!window.confirm(`Delete ${name}? The lease and chat that came from it are removed. Other files stay.`)) return;
+        const res = await removeFile(file.id);
+        if (res.success) onRefresh();
+    };
+
     const formatDate = (dateStr?: string) => {
         if (!dateStr) return "—";
         try {
@@ -189,7 +196,8 @@ export const FilesView: React.FC<FilesViewProps> = ({
                                 <th style={{ width: "42%" }}>File Name</th>
                                 <th style={{ width: "20%" }}>MIME Type</th>
                                 <th style={{ width: "18%" }}>Upload Status</th>
-                                <th style={{ width: "20%" }}>Uploaded At</th>
+                                <th style={{ width: "16%" }}>Uploaded At</th>
+                                <th style={{ width: "12%", textAlign: "right" }}>Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -250,6 +258,16 @@ export const FilesView: React.FC<FilesViewProps> = ({
                                         }}
                                     >
                                         {formatDate(file.createdAt)}
+                                    </td>
+                                    <td style={{ textAlign: "right" }}>
+                                        <button
+                                            className="btn btn-secondary btn-sm"
+                                            type="button"
+                                            onClick={() => void handleDelete(file)}
+                                            style={{ padding: "5px 10px", color: "#b91c1c" }}
+                                        >
+                                            Delete
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

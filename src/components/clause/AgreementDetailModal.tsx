@@ -376,6 +376,21 @@ export const AgreementDetailModal: React.FC<AgreementDetailModalProps> = ({
         Boolean(targetAgreementId) &&
         !hiddenRestartIds[targetAgreementId || ""];
 
+    const handleDeleteLease = async () => {
+        if (!targetAgreementId) return;
+        const title = currentAgreement?.title || "this lease";
+        if (!window.confirm(`Delete ${title}? Its file and chat history go with it. Other leases stay.`)) return;
+        const res = await agreementService.removeAgreement(targetAgreementId);
+        if (res.success) onClose();
+    };
+
+    const handleClearChat = async () => {
+        if (!targetAgreementId) return;
+        if (!window.confirm("Clear this lease's chat history? The agreement stays.")) return;
+        const res = await agreementService.clearAgreementChat(targetAgreementId);
+        if (res.success) setChatMessages([]);
+    };
+
     const handleRestartProcess = async () => {
         if (!targetAgreementId) return;
         setHiddenRestartIds((prev) => ({ ...prev, [targetAgreementId]: true }));
@@ -489,6 +504,36 @@ export const AgreementDetailModal: React.FC<AgreementDetailModalProps> = ({
                             gap: "10px",
                         }}
                     >
+                        {chatMessages.length > 0 && (
+                            <button
+                                className="btn btn-sm"
+                                type="button"
+                                onClick={() => void handleClearChat()}
+                                style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    fontSize: "0.78rem",
+                                    color: "#b91c1c",
+                                }}
+                            >
+                                Clear history
+                            </button>
+                        )}
+                        <button
+                            className="btn btn-sm"
+                            type="button"
+                            onClick={() => void handleDeleteLease()}
+                            style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                fontSize: "0.78rem",
+                                color: "#b91c1c",
+                            }}
+                        >
+                            Delete
+                        </button>
                         {showRestartButton && (
                             <button
                                 className="btn btn-sm"
@@ -622,6 +667,7 @@ export const AgreementDetailModal: React.FC<AgreementDetailModalProps> = ({
                                 )
                             }
                             onSendMessage={handleSendQuery}
+                            onClearHistory={() => void handleClearChat()}
                         />
                     ) : (
                         <AgreementDetailsTab

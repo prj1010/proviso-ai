@@ -1,5 +1,5 @@
 import { extractDocumentText, mimeForFile } from "@/clause/extract";
-import { ingestExtracted, listFiles } from "@/clause/local-db";
+import { deleteFile, ingestExtracted, listFiles } from "@/clause/local-db";
 import { ok, fail, type ApiResponse } from "@/lib/api-envelope";
 
 export interface FileUploadUrlResponse {
@@ -45,6 +45,12 @@ export const processFile = async (
   _fileId: string,
 ): Promise<ApiResponse<ProcessFileResponse>> => {
   return ok({ success: true });
+};
+
+export const removeFile = async (fileId: string): Promise<ApiResponse<{ removed: boolean }>> => {
+  const removed = await deleteFile(fileId);
+  if (!removed) return fail("File not found", 404);
+  return ok({ removed: true });
 };
 
 export const getUserFiles = async (): Promise<ApiResponse<GetUserFilesResponse>> => {

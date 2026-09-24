@@ -848,6 +848,43 @@ export async function reprocess(agreementId: string) {
   });
 }
 
+export async function deleteAgreement(agreementId: string) {
+  return withLeaseLock(() => {
+    const db = loadDb();
+    const agreement = db.agreements.find((item) => item.id === agreementId);
+    if (!agreement) return false;
+    db.agreements = db.agreements.filter((item) => item.id !== agreementId);
+    db.files = db.files.filter((item) => item.id !== agreement.fileId);
+    save(db);
+    return true;
+  });
+}
+
+export async function deleteFile(fileId: string) {
+  return withLeaseLock(() => {
+    const db = loadDb();
+    const hadFile = db.files.some((item) => item.id === fileId);
+    const hadAgreement = db.agreements.some((item) => item.fileId === fileId);
+    if (!hadFile && !hadAgreement) return false;
+    db.files = db.files.filter((item) => item.id !== fileId);
+    db.agreements = db.agreements.filter((item) => item.fileId !== fileId);
+    save(db);
+    return true;
+  });
+}
+
+export async function clearChat(agreementId: string) {
+  return withLeaseLock(() => {
+    const db = loadDb();
+    const agreement = db.agreements.find((item) => item.id === agreementId);
+    if (!agreement) return false;
+    agreement.messages = [];
+    agreement.updatedAt = new Date().toISOString();
+    save(db);
+    return true;
+  });
+}
+
 export function resetWorkspace() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(KEY);
