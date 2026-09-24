@@ -567,14 +567,53 @@ function classify(text: string): SectionClauseType {
 
 function money(text: string, label: RegExp): number | undefined {
   const re = new RegExp(
-    "(?:" + label.source + ")[^\\d]{0,60}(?:inr|rs\\.?|₹|usd|\\$)?\\s*([\\d,]+)",
+    "(?:" + label.source + ")([^\\d]{0,90})((?:inr|rs\\.?|₹|usd|\\$)?\\s*[\\d,]+)",
+    "gi",
+  );
+  for (const match of text.matchAll(re)) {
+    const gap = match[1] ?? "";
+    const chunk = match[2] ?? "";
+    const hasCurrency = /₹|\$|inr|rs\.?/i.test(chunk);
+    if (/\bclause\b/i.test(gap) && !hasCurrency) continue;
+    const raw = chunk.replace(/^(?:inr|rs\.?|₹|usd|\$)\s*/i, "").replace(/,/g, "");
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || amount < 100) continue;
+    return amount;
+  }
+  return undefined;
+}
+
+function dated(text: string, label: RegExp): string | undefined {
+  const month = "January|February|March|April|May|June|July|August|September|October|November|December";
+  const re = new RegExp(
+    "(?:" + label.source + ")\\W{0,40}(\\d{1,2}\\s+(?:" + month + ")\\s+\\d{4})",
     "i",
   );
-  const m = text.match(re);
-  const raw = m?.[1];
-  if (!raw) return undefined;
-  const n = Number(raw.replace(/,/g, ""));
-  return Number.isFinite(n) ? n : undefined;
+  return text.match(re)?.[1];
+}
+
+function propertySize(text: string): string | undefined {
+  const match = text.match(/([\d,]+(?:\.\d+)?)\s*(?:sq\.?\s*ft\.?|square feet|sqft)/i);
+  if (!match?.[1]) return undefined;
+  return `${match[1]} sq ft`;
+}
+
+function propertyAddress(text: string): string | undefined {
+  const schedule = text.match(/schedule a(.{0,900})/i)?.[1] ?? "";
+  const labeled = schedule.match(/address\s*[:|]?\s*(\d{1,4}.{8,100}?\d{6})/i);
+  if (labeled?.[1]) return labeled[1].replace(/\s+/g, " ").trim();
+  const loose = text.match(/address\s*[:|]?\s*(\d{1,4},\s+[A-Za-z].{8,100}?\d{6})/i);
+  return loose?.[1]?.replace(/\s+/g, " ").trim();
+}
+
+function partyName(text: string, role: "Landlord" | "Tenant"): string | undefined {
+  const re = new RegExp(
+    role + ".{0,160}?name:?\\s*[*_\\s:]*(?:mr\\.|ms\\.|mrs\\.|dr\\.)?\\s*([A-Z][A-Za-z]+(?:\\s+[A-Z][A-Za-z]+){0,3})",
+    "i",
+  );
+  const name = text.match(re)?.[1]?.trim();
+  if (!name || /^(name|the|and)$/i.test(name)) return undefined;
+  return name;
 }
 
 function sentences(text: string) {
@@ -606,26 +645,39 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
   risks.sort((a, b) => rank[a.level] - rank[b.level]);
 
   const lower = clean.toLowerCase();
+  const residential = /residential (lease|rental|use|apartment|purposes)|house rent/.test(lower);
   let type: AgreementType = "HOUSE_RENTAL";
-  if (/office|commercial workspace|cowork/.test(lower)) type = "OFFICE_RENTAL";
+  if (residential) type = "HOUSE_RENTAL";
   else if (/shop|retail|showroom/.test(lower)) type = "SHOP_RENTAL";
-  else if (/short-term|airbnb|month-to-month|guest house/.test(lower)) type = "SHORT_TERM_RENTAL";
+  else if (/office|commercial workspace|cowork/.test(lower)) type = "OFFICE_RENTAL";
+  else if (/\b(airbnb|guest house|month-to-month|short-term rental)\b/.test(lower)) type = "SHORT_TERM_RENTAL";
   else if (!/rent|lease|tenant|landlord/.test(lower)) type = "OTHERS";
 
   const rentAmount = money(clean, /monthly rent|base rent|rent is|rent of/);
   const depositAmount = money(clean, /security deposit|deposit of|deposit is/);
+  const effectiveDate = dated(clean, /commencement date|effective date|lease shall commence|shall commence on/);
+  const expiryDate = dated(clean, /expiry date|expire on|expir(?:y|es) on/);
+  const size = propertySize(clean);
+  const address = propertyAddress(clean);
+  const usageTerm = residential || /residential/.test(lower)
+    ? "Residential"
+    : type === "OFFICE_RENTAL" || type === "SHOP_RENTAL"
+      ? "Commercial"
+      : undefined;
   const titleBase = safeName.replace(/\.(pdf|docx|doc|txt|text|md|rtf|csv)$/i, "").replace(/[-_]+/g, " ");
   const title = titleBase.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80) || "Uploaded agreement";
 
-  const landlord = nameAfter(clean, /landlord[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
-  const tenant = nameAfter(clean, /tenant[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
+  const landlord = partyName(clean, "Landlord") ?? nameAfter(clean, /landlord[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
+  const tenant = partyName(clean, "Tenant") ?? nameAfter(clean, /tenant[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
 
   const summary = [
     `${getTypePhrase(type)} extracted from ${safeName}.`,
     rentAmount ? `Rent figure found: ${rentAmount.toLocaleString("en-IN")}.` : "No clear monthly rent figure was detected.",
     depositAmount ? `Deposit figure found: ${depositAmount.toLocaleString("en-IN")}.` : "No clear deposit figure was detected.",
     ...risks.slice(0, 3).map((r) => `${r.level} risk: ${r.reason}`),
-    sections[0] ? `Opening clause: ${sections[0].content.slice(0, 180)}` : "",
+    sections[0] && !/synthetic|fictional|for testing/i.test(sections[0].content.slice(0, 80))
+      ? `Opening clause: ${sections[0].content.slice(0, 180)}`
+      : "",
   ].filter(Boolean);
 
   return {
@@ -634,12 +686,16 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
     status: clean.length < 80 ? "FAILED" : "SUCCESS",
     error: clean.length < 80 ? "This file has almost no readable text, so the clauses could not be seen. Upload a text-based PDF, Word document, or .txt file." : null,
     metadata: {
-      autoRenewal: /automatic(?:ally)? renew/i.test(clean),
+      effectiveDate,
+      expiryDate,
+      autoRenewal: /automatically renew/i.test(clean) && !/not automatically/i.test(clean),
       governingLaw: /tamil nadu/i.test(clean) ? "Tamil Nadu, India" : /chennai/i.test(clean) ? "Courts at Chennai" : undefined,
     },
     property: {
       type: type === "OFFICE_RENTAL" ? "Office" : type === "SHOP_RENTAL" ? "Shop" : "Residential",
-      address: undefined,
+      size,
+      usageTerm,
+      address,
     },
     payments: {
       rentAmount,

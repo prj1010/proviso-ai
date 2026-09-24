@@ -303,7 +303,7 @@ export const AgreementDetailsTab: React.FC<AgreementDetailsTabProps> = ({
                                     >
                                         Usage:
                                     </strong>{" "}
-                                    {property.usageTerm || "Commercial"}
+                                    {property.usageTerm || "N/A"}
                                 </div>
                                 <div>
                                     <strong
