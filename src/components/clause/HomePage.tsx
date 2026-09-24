@@ -63,8 +63,8 @@ const SUPPORTED_CONTRACTS = [
 const PROCESS_STEPS = [
     {
         step: "STEP 01",
-        title: "Upload Your PDF Agreement",
-        desc: "Simply drag and drop your PDF lease into the secure workspace."
+        title: "Upload the agreement",
+        desc: "Drop a PDF, Word, or text lease into the workspace. Each file stays separate.",
     },
     {
         step: "STEP 02",

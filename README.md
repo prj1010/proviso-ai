@@ -1,6 +1,6 @@
 # Proviso
 
-Read a lease before you sign it. Upload a PDF and Proviso pulls the rent, deposit, dates, and parties, then flags the risky clauses. Ask a question and the answer cites the wording. Asha, the voice counsel, can brief the open agreement out loud.
+Read a lease before you sign it. Upload a PDF, Word, or text file and Proviso pulls the rent, deposit, dates, and parties, then flags the risky clauses. Ask a question and the answer cites the wording. Asha, the voice counsel, can brief the open agreement out loud.
 
 Two sample agreements are already in the workspace, so you can click around before uploading anything.
 

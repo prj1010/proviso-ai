@@ -171,7 +171,7 @@ export const AgreementsView: React.FC<AgreementsViewProps> = ({
                         style={{ padding: "8px 16px" }}
                     >
                         <IconPlus size={14} />
-                        <span>Upload Agreement PDF</span>
+                        <span>Upload agreement</span>
                     </button>
                 </div>
             </div>
@@ -307,16 +307,14 @@ export const AgreementsView: React.FC<AgreementsViewProps> = ({
                             lineHeight: 1.6,
                         }}
                     >
-                        Agreements are automatically generated whenever a PDF
-                        file is uploaded and processed through the vector
-                        engine.
+                        Agreements are created when you upload a PDF, Word, or text file.
                     </p>
 
                     <button
                         className="btn btn-primary btn-lg"
                         onClick={onOpenUploadModal}
                     >
-                        <IconUploadCloud size={18} /> Upload PDF to Create
+                        <IconUploadCloud size={18} /> Upload a lease
                         Agreement
                     </button>
                 </div>

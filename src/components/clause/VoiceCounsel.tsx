@@ -120,7 +120,7 @@ export function VoiceCounsel() {
       }
     }
     if (path.startsWith("/dashboard")) {
-      void speak("Upload a text-based PDF and I will brief the rent, the term, and the sharpest risk.");
+      void speak("Upload a PDF, Word, or text lease and I will brief the rent, the term, and the sharpest risk.");
       return;
     }
     void speak(SAMPLE);

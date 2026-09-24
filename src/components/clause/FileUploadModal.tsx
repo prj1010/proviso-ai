@@ -1,4 +1,5 @@
 import { fileService } from "@/services";
+import { isSupportedDocument } from "@/clause/extract";
 import React, { useRef, useState } from "react";
 import {
     IconAlertTriangle,
@@ -27,7 +28,7 @@ interface UploadJob {
 const READ_AT_ONCE = 2;
 
 function isPdf(file: File) {
-    return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    return isSupportedDocument(file);
 }
 
 function jobId() {
@@ -51,10 +52,10 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         const pdfs = incoming.filter(isPdf);
         const skipped = incoming.length - pdfs.length;
         if (!pdfs.length) {
-            setError("Only PDF agreements are supported. Please select a .pdf file.");
+            setError("Use a PDF, Word document (.doc or .docx), or a text file.");
             return;
         }
-        setError(skipped ? `${skipped} file${skipped === 1 ? "" : "s"} skipped. Only PDFs are read.` : null);
+        setError(skipped ? `${skipped} file${skipped === 1 ? "" : "s"} skipped. Use PDF, Word, or text.` : null);
         setJobs((prev) => [
             ...prev,
             ...pdfs.map((file) => ({
@@ -80,12 +81,12 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
             while (cursor < pending.length) {
                 const job = pending[cursor];
                 cursor += 1;
-                patchJob(job.id, { status: "reading", detail: "Reading this PDF on its own." });
+                patchJob(job.id, { status: "reading", detail: "Reading this file on its own." });
                 const res = await fileService.ingestPdfFile(job.file);
                 if (!res.success) {
                     patchJob(job.id, {
                         status: "failed",
-                        detail: res.error || "Could not read this PDF.",
+                        detail: res.error || "Could not read this file.",
                     });
                     continue;
                 }
@@ -93,7 +94,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     status: "done",
                     detail:
                         res.data?.status === "FAILED"
-                            ? "Saved, but this PDF had no selectable text."
+                            ? "Saved, but this file had no readable text."
                             : `Saved as its own ${res.data?.title || "lease"}.`,
                 });
             }
@@ -129,8 +130,8 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                         lineHeight: 1.5,
                     }}
                 >
-                    Upload house, office, and shop leases together. Each PDF is read on its own
-                    and saved as its own agreement. One failure does not touch the others.
+                    Upload house, office, and shop leases together. PDF, Word, and text files are each
+                    read on their own and saved as their own agreement.
                 </p>
 
                 {error && (
@@ -168,7 +169,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                     <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".pdf,application/pdf"
+                        accept=".pdf,.doc,.docx,.txt,.md,.rtf,.csv,application/pdf,application/msword,text/plain"
                         multiple
                         style={{ display: "none" }}
                         onChange={(e) => {
@@ -196,7 +197,7 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
                         Click to upload or drag & drop
                     </div>
                     <div style={{ fontSize: "0.8rem", color: "#94A3B8" }}>
-                        One or more PDFs, up to 25MB each
+                        One or more files, up to 25MB each. PDF, Word, or text.
                     </div>
                 </div>
 

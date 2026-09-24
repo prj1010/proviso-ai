@@ -93,8 +93,7 @@ export const FilesView: React.FC<FilesViewProps> = ({
                             marginTop: "4px",
                         }}
                     >
-                        Uploaded PDF documents, presigned status, and automated
-                        processing pipelines.
+                        Uploaded PDF, Word, and text files.
                     </p>
                 </div>
 
@@ -119,7 +118,7 @@ export const FilesView: React.FC<FilesViewProps> = ({
                         style={{ padding: "8px 16px" }}
                     >
                         <IconPlus size={14} />
-                        <span>Upload PDF</span>
+                        <span>Upload file</span>
                     </button>
                 </div>
             </div>
@@ -172,16 +171,14 @@ export const FilesView: React.FC<FilesViewProps> = ({
                             lineHeight: 1.6,
                         }}
                     >
-                        Upload lease and rental contracts as PDF to start vector
-                        processing, AI metadata extraction, and agreement
-                        generation.
+                        Upload a lease as PDF, Word, or text to start a review.
                     </p>
 
                     <button
                         className="btn btn-primary btn-lg"
                         onClick={onOpenUploadModal}
                     >
-                        <IconUploadCloud size={18} /> Upload Your First PDF
+                        <IconUploadCloud size={18} /> Upload a file
                     </button>
                 </div>
             ) : (

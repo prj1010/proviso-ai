@@ -1,3 +1,4 @@
+import { extractDocumentText, mimeForFile } from "@/clause/extract";
 import { ingestExtracted, listFiles } from "@/clause/local-db";
 import { ok, fail, type ApiResponse } from "@/lib/api-envelope";
 
@@ -54,15 +55,14 @@ export const ingestPdfFile = async (
   file: File,
 ): Promise<ApiResponse<{ agreementId: string; title: string; status: string }>> => {
   try {
-    const { extractPdfText } = await import("@/clause/pdf");
-    const text = await extractPdfText(await file.arrayBuffer());
-    const agreement = await ingestExtracted(file.name, text);
+    const text = await extractDocumentText(file);
+    const agreement = await ingestExtracted(file.name, text, mimeForFile(file));
     return ok({
       agreementId: agreement.id,
       title: agreement.title,
       status: agreement.status,
     });
   } catch (err) {
-    return fail(err instanceof Error ? err.message : "Could not read that PDF.");
+    return fail(err instanceof Error ? err.message : "Could not read that file.");
   }
 };

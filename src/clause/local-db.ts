@@ -609,7 +609,7 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
 
   const rentAmount = money(clean, /monthly rent|base rent|rent is|rent of/);
   const depositAmount = money(clean, /security deposit|deposit of|deposit is/);
-  const titleBase = fileName.replace(/\.pdf$/i, "").replace(/[-_]+/g, " ");
+  const titleBase = fileName.replace(/\.(pdf|docx|doc|txt|text|md|rtf|csv)$/i, "").replace(/[-_]+/g, " ");
   const title = titleBase.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80) || "Uploaded agreement";
 
   const landlord = nameAfter(clean, /landlord[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
@@ -627,7 +627,7 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
     title,
     type,
     status: clean.length < 80 ? "FAILED" : "SUCCESS",
-    error: clean.length < 80 ? "This PDF has almost no selectable text, so the single-pass reader could not see the clauses. Export a text-based PDF and upload it again." : null,
+    error: clean.length < 80 ? "This file has almost no readable text, so the clauses could not be seen. Upload a text-based PDF, Word document, or .txt file." : null,
     metadata: {
       autoRenewal: /automatic(?:ally)? renew/i.test(clean),
       governingLaw: /tamil nadu/i.test(clean) ? "Tamil Nadu, India" : /chennai/i.test(clean) ? "Courts at Chennai" : undefined,
@@ -794,7 +794,7 @@ export function listFiles() {
   return loadDb().files;
 }
 
-export async function ingestExtracted(fileName: string, text: string) {
+export async function ingestExtracted(fileName: string, text: string, mimeType = "application/pdf") {
   const analyzed = await applyJev(analyzeText(fileName, text));
   return withLeaseLock(() => {
     const db = loadDb();
@@ -803,7 +803,7 @@ export async function ingestExtracted(fileName: string, text: string) {
     db.files.unshift({
       id: fileId,
       fileName,
-      mimeType: "application/pdf",
+      mimeType,
       status: "UPLOADED",
       createdAt: now,
     });
