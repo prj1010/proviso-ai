@@ -8,7 +8,8 @@ services:
     region: singapore
     branch: main
     autoDeploy: true
-    # NODE_ENV=production is set below. Without --include=dev, npm skips Vite and the React plugin and the build dies.
+    # Also works if the dashboard still has the old command `npm ci && npm run build`.
+    # Vite and Nitro are production dependencies, so NODE_ENV=production does not skip them.
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /
