@@ -566,10 +566,14 @@ function classify(text: string): SectionClauseType {
 }
 
 function money(text: string, label: RegExp): number | undefined {
-  const re = new RegExp(label.source + "[^\\d]{0,40}(?:inr|rs\\.?|₹|usd|\\$)?\\s*([\\d,]+)", "i");
+  const re = new RegExp(
+    "(?:" + label.source + ")[^\\d]{0,60}(?:inr|rs\\.?|₹|usd|\\$)?\\s*([\\d,]+)",
+    "i",
+  );
   const m = text.match(re);
-  if (!m) return undefined;
-  const n = Number(m[1].replace(/,/g, ""));
+  const raw = m?.[1];
+  if (!raw) return undefined;
+  const n = Number(raw.replace(/,/g, ""));
   return Number.isFinite(n) ? n : undefined;
 }
 
@@ -582,7 +586,8 @@ function sentences(text: string) {
 }
 
 export function analyzeText(fileName: string, text: string): Omit<AgreementRecord, "id" | "fileId" | "chatId" | "messages" | "createdAt" | "updatedAt"> {
-  const clean = text.replace(/\s+/g, " ").trim();
+  const clean = String(text ?? "").replace(/\s+/g, " ").trim();
+  const safeName = String(fileName ?? "agreement.txt");
   const chunks = sentences(clean).slice(0, 24);
   const sections = (chunks.length ? chunks : [clean.slice(0, 1200)]).map((content, i) =>
     sect(`${i + 1}`, headingFor(content), classify(content), content),
@@ -609,14 +614,14 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
 
   const rentAmount = money(clean, /monthly rent|base rent|rent is|rent of/);
   const depositAmount = money(clean, /security deposit|deposit of|deposit is/);
-  const titleBase = fileName.replace(/\.(pdf|docx|doc|txt|text|md|rtf|csv)$/i, "").replace(/[-_]+/g, " ");
+  const titleBase = safeName.replace(/\.(pdf|docx|doc|txt|text|md|rtf|csv)$/i, "").replace(/[-_]+/g, " ");
   const title = titleBase.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80) || "Uploaded agreement";
 
   const landlord = nameAfter(clean, /landlord[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
   const tenant = nameAfter(clean, /tenant[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
 
   const summary = [
-    `${getTypePhrase(type)} extracted from ${fileName}.`,
+    `${getTypePhrase(type)} extracted from ${safeName}.`,
     rentAmount ? `Rent figure found: ${rentAmount.toLocaleString("en-IN")}.` : "No clear monthly rent figure was detected.",
     depositAmount ? `Deposit figure found: ${depositAmount.toLocaleString("en-IN")}.` : "No clear deposit figure was detected.",
     ...risks.slice(0, 3).map((r) => `${r.level} risk: ${r.reason}`),
@@ -722,8 +727,9 @@ function getTypePhrase(type: AgreementType) {
 
 function nameAfter(text: string, re: RegExp) {
   const m = text.match(re);
-  if (!m) return undefined;
-  return m[1].replace(/\b(residing|of|and|the)\b.*$/i, "").trim().slice(0, 60);
+  const name = m?.[1];
+  if (!name) return undefined;
+  return name.replace(/\b(residing|of|and|the)\b.*$/i, "").trim().slice(0, 60);
 }
 
 export function listAgreements() {

@@ -104,5 +104,18 @@ function rtfToText(raw: string) {
 }
 
 function decodeText(data: ArrayBuffer) {
-  return new TextDecoder("utf-8", { fatal: false }).decode(data).replace(/^\uFEFF/, "").trim();
+  const bytes = new Uint8Array(data);
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder("utf-16le").decode(bytes).replace(/^\uFEFF/, "").trim();
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder("utf-16be").decode(bytes).replace(/^\uFEFF/, "").trim();
+  }
+  let zeroPairs = 0;
+  const sample = Math.min(bytes.length, 200);
+  for (let i = 1; i < sample; i += 2) if (bytes[i] === 0) zeroPairs += 1;
+  if (sample > 20 && zeroPairs > sample / 4) {
+    return new TextDecoder("utf-16le").decode(bytes).replace(/^\uFEFF/, "").trim();
+  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/^\uFEFF/, "").trim();
 }
