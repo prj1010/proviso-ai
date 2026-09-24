@@ -1,6 +1,6 @@
 import { extractDocumentText, mimeForFile } from "@/clause/extract";
 import { deleteFile, ingestExtracted, listFiles } from "@/clause/local-db";
-import { isRentalAgreement, NOT_A_LEASE } from "@/clause/read-text";
+import { isContractDocument, NOT_A_CONTRACT } from "@/clause/read-text";
 import { ok, fail, type ApiResponse } from "@/lib/api-envelope";
 
 export interface FileUploadUrlResponse {
@@ -63,7 +63,7 @@ export const ingestPdfFile = async (
 ): Promise<ApiResponse<{ agreementId: string; title: string; status: string }>> => {
   try {
     const text = await extractDocumentText(file);
-    if (!isRentalAgreement(text)) return fail(NOT_A_LEASE);
+    if (!isContractDocument(text)) return fail(NOT_A_CONTRACT);
     const agreement = await ingestExtracted(file.name, text, mimeForFile(file));
     return ok({
       agreementId: agreement.id,

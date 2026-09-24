@@ -3,6 +3,7 @@ export const AGREEMENT_TYPES = [
   "OFFICE_RENTAL",
   "SHORT_TERM_RENTAL",
   "SHOP_RENTAL",
+  "TERMS",
   "OTHERS",
 ] as const;
 
@@ -33,7 +34,8 @@ export const AGREEMENT_TYPE_DISPLAY_LABELS: Record<AgreementType, string> = {
   OFFICE_RENTAL: "Office Rental Agreement",
   SHORT_TERM_RENTAL: "Short-Term Rental Agreement",
   SHOP_RENTAL: "Shop Rental Agreement",
-  OTHERS: "Others",
+  TERMS: "Terms and Conditions",
+  OTHERS: "Other Contract",
 };
 
 export const AGREEMENT_STATUS_DISPLAY_LABELS: Record<AgreementStatus, string> = {

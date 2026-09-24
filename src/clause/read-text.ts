@@ -1,17 +1,21 @@
-export const NOT_A_LEASE = "Please provide appropriate rental/lease agreement";
+export const NOT_A_CONTRACT =
+  "Please provide a terms and conditions document, contract, or agreement.";
 
-const PARTY = /\b(landlord|lessor|tenant|lessee|licensor|licensee)\b/i;
-const DEAL = /\b(lease agreement|rental agreement|tenancy agreement|leave and licen[cs]e|rent agreement)\b/i;
-const MONEY = /\b(monthly rent|base rent|rent payable|security deposit|advance rent|rental)\b/i;
-const PLACE = /\b(premises|demised|leased property|lock-?in|notice period)\b/i;
+const CONTRACT_SIGNALS = [
+  /\bterms?\s+(and|&)\s+conditions\b/i,
+  /\bterms of (use|service)\b/i,
+  /\bprivacy policy\b/i,
+  /\b(end user licen[cs]e|eula|user agreement)\b/i,
+  /\b(lease|tenancy|rental agreement|rent agreement)\b/i,
+  /\b(agreement|contract)\b/i,
+  /\b(liability|indemnif|governing law|arbitration|warrant(?:y|ies))\b/i,
+  /\b(you agree|the user shall|we may|the company)\b/i,
+];
 
-export function isRentalAgreement(text: string) {
+export function isContractDocument(text: string) {
   const body = String(text ?? "").replace(/\u0000/g, " ");
-  if (body.trim().length < 40) return false;
-  const hits = [PARTY, DEAL, MONEY, PLACE].filter((rule) => rule.test(body)).length;
-  const namesAParty = PARTY.test(body);
-  const namesADeal = DEAL.test(body) || MONEY.test(body) || PLACE.test(body);
-  return hits >= 2 && namesAParty && namesADeal;
+  if (body.trim().length < 80) return false;
+  return CONTRACT_SIGNALS.filter((rule) => rule.test(body)).length >= 2;
 }
 
 export function readPlainText(data: ArrayBuffer) {

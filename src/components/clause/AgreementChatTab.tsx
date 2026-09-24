@@ -398,7 +398,7 @@ export const AgreementChatTab: React.FC<AgreementChatTabProps> = ({
             >
                 <input
                     type="text"
-                    placeholder="Ask a question about this lease agreement..."
+                    placeholder="Ask a question about this document..."
                     className="input-field"
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}

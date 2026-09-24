@@ -1,5 +1,6 @@
 import type { AgreementStatus, AgreementType, RiskLevelType, SectionClauseType } from "@/clause/constants";
 import { decisionFromJudgment, judgeClauses } from "@/clause/jev.functions";
+import { linearRetrieve, chunkDocument } from "@/clause/linearrag";
 import { counselAnswer } from "@/clause/voice.functions";
 
 export interface Party {
@@ -377,22 +378,21 @@ export function briefFor(agreement: AgreementRecord) {
 }
 
 export function evidencePack(agreement: AgreementRecord) {
-  const head = [
+  return evidenceFor(agreement, "summary liability termination fees privacy governing law refund notice deposit rent");
+}
+
+function evidenceFor(agreement: AgreementRecord, question: string) {
+  const facts = [
     `Title: ${agreement.title}`,
     `Type: ${agreement.type}`,
     `Parties: ${agreement.parties.map((p) => `${p.role} ${p.name}`).join("; ")}`,
-    `Property: ${agreement.property?.address || ""} ${agreement.property?.type || ""} ${agreement.property?.size || ""}`,
+    `Property: ${agreement.property?.address || ""} ${agreement.property?.type || ""} ${agreement.property?.size || ""} ${agreement.property?.usageTerm || ""}`,
     `Rent: ${agreement.payments?.currency || ""} ${agreement.payments?.rentAmount || ""} ${agreement.payments?.rentCycle || ""}`,
     `Deposit: ${agreement.payments?.depositAmount || ""} ${agreement.payments?.depositType || ""}`,
     `Dates: ${agreement.metadata.effectiveDate || ""} to ${agreement.metadata.expiryDate || ""}; auto-renew ${agreement.metadata.autoRenewal ? "yes" : "no"}; law ${agreement.metadata.governingLaw || ""}`,
-    "Summary:",
-    ...agreement.summary.map((s) => `- ${s}`),
-    "Sections:",
-    ...agreement.sections.map((s) => `${s.ref} ${s.heading}: ${s.content}`),
-    "Flagged risks:",
-    ...agreement.risks.map((r) => `${r.level}: "${r.clause}" — ${r.reason}`),
-  ];
-  return head.join("\n");
+  ].join("\n");
+  const passages = linearRetrieve(agreement.sourceText || "", question);
+  return `${facts}\n\nPassages:\n${passages}`;
 }
 
 function isSummaryAsk(question: string) {
@@ -512,7 +512,11 @@ export async function answerQuestion(agreement: AgreementRecord, question: strin
   }
   try {
     const remote = await counselAnswer({
-      data: { question, evidence: evidencePack(agreement), title: agreement.title },
+      data: {
+        question,
+        evidence: evidenceFor(agreement, isSummaryAsk(question) ? `${question} liability termination fees privacy governing law refund` : question),
+        title: agreement.title,
+      },
     });
     if (remote.ok && remote.text) return remote.text;
   } catch {
@@ -642,9 +646,11 @@ function sentences(text: string) {
 }
 
 export function analyzeText(fileName: string, text: string): Omit<AgreementRecord, "id" | "fileId" | "chatId" | "messages" | "createdAt" | "updatedAt"> {
-  const clean = String(text ?? "").replace(/\s+/g, " ").trim();
+  const structured = String(text ?? "").replace(/\u0000/g, "").replace(/\r\n/g, "\n").trim();
+  const clean = structured.replace(/\s+/g, " ").trim();
   const safeName = String(fileName ?? "agreement.txt");
-  const chunks = sentences(clean).slice(0, 24);
+  const passages = chunkDocument(structured);
+  const chunks = (passages.length ? passages : sentences(clean)).slice(0, 40);
   const sections = (chunks.length ? chunks : [clean.slice(0, 1200)]).map((content, i) =>
     sect(`${i + 1}`, headingFor(content), classify(content), content),
   );
@@ -663,12 +669,15 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
 
   const lower = clean.toLowerCase();
   const residential = /residential (lease|rental|use|apartment|purposes)|house rent/.test(lower);
+  const terms = /\bterms?\s+(and|&)\s+conditions\b|\bterms of (use|service)\b|\bprivacy policy\b|\bend user licen/i.test(lower);
   let type: AgreementType = "HOUSE_RENTAL";
   if (residential) type = "HOUSE_RENTAL";
+  else if (terms) type = "TERMS";
   else if (/shop|retail|showroom/.test(lower)) type = "SHOP_RENTAL";
   else if (/office|commercial workspace|cowork/.test(lower)) type = "OFFICE_RENTAL";
   else if (/\b(airbnb|guest house|month-to-month|short-term rental)\b/.test(lower)) type = "SHORT_TERM_RENTAL";
-  else if (!/rent|lease|tenant|landlord/.test(lower)) type = "OTHERS";
+  else if (!/rent|lease|tenant|landlord|agreement|contract/.test(lower)) type = "OTHERS";
+  else if (!/lease|rent|tenant|landlord/.test(lower)) type = "TERMS";
 
   const rentAmount = money(clean, /monthly rent|base rent|rent is|rent of/);
   const depositAmount = money(clean, /security deposit|deposit of|deposit is/);
@@ -676,21 +685,24 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
   const expiryDate = dated(clean, /expiry date|expire on|expir(?:y|es) on/);
   const size = propertySize(clean);
   const address = propertyAddress(clean);
-  const usageTerm = residential || /residential/.test(lower)
-    ? "Residential"
-    : type === "OFFICE_RENTAL" || type === "SHOP_RENTAL"
-      ? "Commercial"
-      : undefined;
+  const usageTerm = type === "TERMS"
+    ? "Terms and conditions"
+    : residential || /residential/.test(lower)
+      ? "Residential"
+      : type === "OFFICE_RENTAL" || type === "SHOP_RENTAL"
+        ? "Commercial"
+        : undefined;
   const titleBase = safeName.replace(/\.(pdf|docx|doc|txt|text|md|rtf|csv)$/i, "").replace(/[-_]+/g, " ");
   const title = titleBase.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80) || "Uploaded agreement";
 
   const landlord = partyName(clean, "Landlord") ?? nameAfter(clean, /landlord[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
   const tenant = partyName(clean, "Tenant") ?? nameAfter(clean, /tenant[^A-Za-z]{0,20}([A-Z][A-Za-z .&']{2,50})/);
 
+  const leaseLike = type !== "TERMS";
   const summary = [
     `${getTypePhrase(type)} extracted from ${safeName}.`,
-    rentAmount ? `Rent figure found: ${rentAmount.toLocaleString("en-IN")}.` : "No clear monthly rent figure was detected.",
-    depositAmount ? `Deposit figure found: ${depositAmount.toLocaleString("en-IN")}.` : "No clear deposit figure was detected.",
+    leaseLike && rentAmount ? `Rent figure found: ${rentAmount.toLocaleString("en-IN")}.` : "",
+    leaseLike && depositAmount ? `Deposit figure found: ${depositAmount.toLocaleString("en-IN")}.` : "",
     ...risks.slice(0, 3).map((r) => `${r.level} risk: ${r.reason}`),
     sections[0] && !/synthetic|fictional|for testing/i.test(sections[0].content.slice(0, 80))
       ? `Opening clause: ${sections[0].content.slice(0, 180)}`
@@ -709,7 +721,7 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
       governingLaw: /tamil nadu/i.test(clean) ? "Tamil Nadu, India" : /chennai/i.test(clean) ? "Courts at Chennai" : undefined,
     },
     property: {
-      type: type === "OFFICE_RENTAL" ? "Office" : type === "SHOP_RENTAL" ? "Shop" : "Residential",
+      type: type === "TERMS" ? "Terms" : type === "OFFICE_RENTAL" ? "Office" : type === "SHOP_RENTAL" ? "Shop" : type === "OTHERS" ? "Contract" : "Residential",
       size,
       usageTerm,
       address,
@@ -728,7 +740,7 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
     summary: summary.slice(0, 8),
     sections: clean.length < 80 ? [] : sections,
     risks: clean.length < 80 ? [] : risks.slice(0, 8),
-    sourceText: clean.slice(0, 20000),
+    sourceText: structured.slice(0, 120000),
   };
 }
 
@@ -794,7 +806,8 @@ function getTypePhrase(type: AgreementType) {
   if (type === "OFFICE_RENTAL") return "Office lease";
   if (type === "SHOP_RENTAL") return "Shop lease";
   if (type === "SHORT_TERM_RENTAL") return "Short-term rental";
-  if (type === "OTHERS") return "Document";
+  if (type === "TERMS") return "Terms and conditions";
+  if (type === "OTHERS") return "Contract";
   return "House rental";
 }
 
