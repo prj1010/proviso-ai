@@ -68,8 +68,8 @@ export const getAgreementDetails = async (
 export const processAgreement = async (
   id: string,
 ): Promise<ApiResponse<ProcessAgreementResponse>> => {
-  reprocess(id);
-  return ok({ message: "Re-ran the single-pass review." });
+  await reprocess(id);
+  return ok({ message: "Re-ran the review." });
 };
 
 export const sendAgreementQuery = async (params: {

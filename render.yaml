@@ -23,3 +23,6 @@ services:
       # Voice and harder lease answers. Set this in the Render dashboard.
       - key: GROQ_API_KEY
         sync: false
+      # Typed clause scores, citations, and the speak gate.
+      - key: TYPESAFE_API_KEY
+        sync: false

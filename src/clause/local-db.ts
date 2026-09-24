@@ -1,4 +1,6 @@
 import type { AgreementStatus, AgreementType, RiskLevelType, SectionClauseType } from "@/clause/constants";
+import { getClauseTypeDisplayLabel } from "@/clause/constants";
+import { citeSections, decisionFromJudgment, judgeClauses, supportClaim } from "@/clause/jev.functions";
 import { counselAnswer } from "@/clause/voice.functions";
 
 export interface Party {
@@ -20,6 +22,7 @@ export interface RiskItem {
   level: RiskLevelType;
   clause: string;
   reason: string;
+  source?: "jev";
 }
 
 export interface ChatMessage {
@@ -452,22 +455,55 @@ function extraTokens(q: string) {
 }
 
 export async function answerQuestion(agreement: AgreementRecord, question: string) {
-  const local = localAnswer(agreement, question);
-  const wantsModel = !local.confident || HINGLISH.test(question);
-  if (!wantsModel) return local.text;
+  let local = localAnswer(agreement, question);
+  let evidence = evidencePack(agreement);
   try {
-    const remote = await counselAnswer({
+    const cited = await citeSections({
       data: {
         question,
-        evidence: evidencePack(agreement),
-        title: agreement.title,
+        sections: agreement.sections.slice(0, 10).map((s) => ({
+          ref: s.ref,
+          heading: s.heading,
+          content: s.content,
+        })),
       },
     });
-    if (remote.ok) return remote.text;
+    if (cited.ok && cited.ref) {
+      const section = agreement.sections.find((s) => s.ref === cited.ref);
+      if (section) {
+        evidence = `${section.ref} ${section.heading}: ${section.content}`;
+        local = {
+          text: `According to ${section.ref} (${section.heading}): ${section.content}`,
+          confident: cited.noul >= 0.7 && !HINGLISH.test(question),
+        };
+      }
+    }
   } catch {
-    /* local fallback */
+    /* keyword citation stands */
   }
-  return local.text;
+
+  const wantsModel = !local.confident || HINGLISH.test(question);
+  let text = local.text;
+  if (wantsModel) {
+    try {
+      const remote = await counselAnswer({
+        data: { question, evidence, title: agreement.title },
+      });
+      if (remote.ok) text = remote.text;
+    } catch {
+      /* local fallback */
+    }
+  }
+
+  try {
+    const check = await supportClaim({ data: { claim: text, evidence } });
+    if (check.ok && check.noul < 0.6) {
+      text += "\n\nUnverified: the cited wording may not support this, so it should not be read aloud.";
+    }
+  } catch {
+    /* speak anyway when Jev is down */
+  }
+  return text;
 }
 
 const RULES: { test: RegExp; level: RiskLevelType; reason: string }[] = [
@@ -619,6 +655,47 @@ export function analyzeText(fileName: string, text: string): Omit<AgreementRecor
   };
 }
 
+async function applyJev<T extends { sections: ClauseSection[]; risks: RiskItem[] }>(draft: T): Promise<T> {
+  if (!draft.sections.length) return draft;
+  try {
+    const judged = await judgeClauses({
+      data: {
+        sections: draft.sections.slice(0, 8).map((s) => ({ ref: s.ref, content: s.content })),
+      },
+    });
+    if (!judged.ok) return draft;
+    const risks = draft.risks.filter((r) => r.source !== "jev");
+    const covered = new Set<string>();
+    for (const judgment of judged.judgments) {
+      const decision = decisionFromJudgment(judgment);
+      const section = draft.sections.find((s) => s.ref === judgment.ref);
+      if (!section) continue;
+      if (decision.type) {
+        section.type = decision.type;
+        section.heading = getClauseTypeDisplayLabel(decision.type);
+      }
+      if (!decision.level || decision.level === "LOW") continue;
+      covered.add(section.content.slice(0, 500));
+      risks.push({
+        id: uid(),
+        level: decision.level,
+        clause: section.content.slice(0, 500),
+        reason: decision.reason,
+        source: "jev",
+      });
+    }
+    const rank: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    draft.risks = [
+      ...risks.filter((r) => r.source === "jev" || !covered.has(r.clause)),
+    ]
+      .sort((a, b) => rank[a.level] - rank[b.level])
+      .slice(0, 8);
+  } catch {
+    /* heuristic risks stand */
+  }
+  return draft;
+}
+
 function headingFor(content: string) {
   const type = classify(content);
   const labels: Record<SectionClauseType, string> = {
@@ -720,7 +797,7 @@ export function listFiles() {
   return loadDb().files;
 }
 
-export function ingestExtracted(fileName: string, text: string) {
+export async function ingestExtracted(fileName: string, text: string) {
   const db = loadDb();
   const fileId = uid();
   const now = new Date().toISOString();
@@ -731,7 +808,7 @@ export function ingestExtracted(fileName: string, text: string) {
     status: "UPLOADED",
     createdAt: now,
   });
-  const analyzed = analyzeText(fileName, text);
+  const analyzed = await applyJev(analyzeText(fileName, text));
   const agreement: AgreementRecord = {
     ...analyzed,
     id: uid(),
@@ -746,11 +823,11 @@ export function ingestExtracted(fileName: string, text: string) {
   return agreement;
 }
 
-export function reprocess(agreementId: string) {
+export async function reprocess(agreementId: string) {
   const db = loadDb();
   const agreement = db.agreements.find((a) => a.id === agreementId);
   if (!agreement) return;
-  const next = analyzeText(agreement.title + ".pdf", agreement.sourceText || "");
+  const next = await applyJev(analyzeText(agreement.title + ".pdf", agreement.sourceText || ""));
   Object.assign(agreement, next, { updatedAt: new Date().toISOString() });
   save(db);
 }

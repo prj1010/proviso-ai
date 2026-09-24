@@ -1,4 +1,5 @@
 import { briefFor, getAgreement, listAgreements } from "@/clause/local-db";
+import { supportClaim } from "@/clause/jev.functions";
 import { speakClause } from "@/clause/voice.functions";
 import { agreementService } from "@/services";
 import { useRouterState } from "@tanstack/react-router";
@@ -76,8 +77,6 @@ export function VoiceCounsel() {
         const src = URL.createObjectURL(new Blob([bytes], { type: result.mime || "audio/mpeg" }));
         urlRef.current = src;
         await playUrl(src);
-      } else if (result.ok && "url" in result && result.url) {
-        await playUrl(result.url);
       } else {
         await browserSpeak(spoken);
       }
@@ -117,7 +116,24 @@ export function VoiceCounsel() {
     if (id) {
       const agreement = getAgreement(id);
       if (agreement && agreement.status === "SUCCESS") {
-        void speak(briefFor(agreement));
+        void (async () => {
+          const spoken = briefFor(agreement);
+          try {
+            const check = await supportClaim({
+              data: {
+                claim: spoken,
+                evidence: (agreement.sourceText || agreement.summary.join(" ")).slice(0, 4000),
+              },
+            });
+            if (check.ok && check.noul < 0.6) {
+              await speak("I am not confident this briefing stays inside the lease, so I will not read it aloud. The risks tab has the flagged clauses.");
+              return;
+            }
+          } catch {
+            /* speak the local brief */
+          }
+          await speak(spoken);
+        })();
         return;
       }
     }
@@ -191,6 +207,10 @@ export function VoiceCounsel() {
         },
       }),
     );
+    if (reply.includes("Unverified:")) {
+      await speak("I am not confident that answer stays inside the lease, so I will not read it aloud.");
+      return;
+    }
     await speak(reply);
   };
 

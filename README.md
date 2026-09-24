@@ -8,7 +8,7 @@ Two sample agreements are already in the workspace, so you can click around befo
 
 ```bash
 npm install
-GROQ_API_KEY=your_key npm run dev
+GROQ_API_KEY=your_groq_key TYPESAFE_API_KEY=your_typesafe_key npm run dev
 ```
 
 Open [http://localhost:8080](http://localhost:8080). Sign in with any email. The code is **482910**.
@@ -26,12 +26,25 @@ Set `GROQ_API_KEY` in the environment. Without it, the page still works: answers
 
 Straight questions about rent, notice, and the deposit are answered locally and do not call Groq. Groq is used when the local reader is unsure, or when the question is in Hinglish or another language.
 
+## Jev
+
+Typed decisions use TypeSafe Jev (`jev-latest`). Jev does not write the answer and does not speak. Set `TYPESAFE_API_KEY`.
+
+| Decision | What it does |
+| --- | --- |
+| Clause type and tenant-risk score | One request per clause on upload |
+| Trap checks | Indemnity, auto-renew, non-refundable deposit, one-sided lock-in |
+| Citation | Picks the section that answers the question |
+| Support gate | Blocks Asha when the line is not supported (below 0.6) |
+
+Code owns the thresholds. A trap at 0.75 or above keeps its severity. Between 0.45 and 0.75 it stays on watch. A severe score with confidence under 0.45 is not marked critical. Risks Jev scored show a JEV badge. Without the key, the keyword reader still runs.
+
 ## Render
 
 [render.yaml](render.yaml) is a Render Blueprint.
 
 1. In Render, choose **New → Blueprint** and select this repo.
-2. Set `GROQ_API_KEY` when the dashboard asks for it.
+2. Set `GROQ_API_KEY` and `TYPESAFE_API_KEY` when the dashboard asks for them.
 3. Deploy. The build is `npm ci && npm run build`. The start command is `npm start`.
 
 Render sets `RENDER=true`. That switches the production server to Node and binds it to `PORT`. Agreements stay in the browser. No database is required.

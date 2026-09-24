@@ -92,6 +92,9 @@ export const AgreementRisksTab: React.FC<AgreementRisksTabProps> = ({
                         )}
                         {level} RISK
                     </span>
+                    {risk.source === "jev" && (
+                        <span className="badge badge-info">JEV</span>
+                    )}
                 </div>
 
                 {risk.clause && (

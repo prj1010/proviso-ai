@@ -56,7 +56,7 @@ export const ingestPdfFile = async (
   try {
     const { extractPdfText } = await import("@/clause/pdf");
     const text = await extractPdfText(await file.arrayBuffer());
-    const agreement = ingestExtracted(file.name, text);
+    const agreement = await ingestExtracted(file.name, text);
     return ok({
       agreementId: agreement.id,
       title: agreement.title,
