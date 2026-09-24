@@ -20,6 +20,6 @@ services:
         value: 0.0.0.0
       - key: NITRO_HOST
         value: 0.0.0.0
-      # Voice and grounded answers. Set this in the Render dashboard.
-      - key: XAI_API_KEY
+      # Voice and harder lease answers. Set this in the Render dashboard.
+      - key: GROQ_API_KEY
         sync: false

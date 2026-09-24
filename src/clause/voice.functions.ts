@@ -1,9 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 
-const MODEL = "grok-4.5";
+const CHAT_MODEL = "llama-3.3-70b-versatile";
+const SPEECH_MODEL = "canopylabs/orpheus-v1-english";
+const SPEECH_VOICE = "hannah";
 
 function clip(value: unknown, max: number) {
   return String(value ?? "").slice(0, max);
+}
+
+function groqKey() {
+  return process.env.GROQ_API_KEY?.trim() || "";
 }
 
 export const speakClause = createServerFn({ method: "POST" })
@@ -12,19 +18,20 @@ export const speakClause = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     if (!data.text) return { ok: false as const, error: "Nothing to say." };
-    const apiKey = process.env.XAI_API_KEY;
+    const apiKey = groqKey();
     if (!apiKey) return { ok: false as const, error: "Voice is unavailable." };
 
-    const res = await fetch("https://api.x.ai/v1/tts", {
+    const res = await fetch("https://api.groq.com/openai/v1/audio/speech", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        text: data.text,
-        voice_id: "eve",
-        language: "en",
+        model: SPEECH_MODEL,
+        voice: SPEECH_VOICE,
+        input: data.text,
+        response_format: "wav",
       }),
     });
 
@@ -32,20 +39,9 @@ export const speakClause = createServerFn({ method: "POST" })
       return { ok: false as const, error: `Voice is unavailable (${res.status}).` };
     }
 
-    const ctype = res.headers.get("content-type") || "";
-    if (ctype.includes("application/json")) {
-      const body = (await res.json()) as { url?: string; audio?: string };
-      if (body.url) return { ok: true as const, url: body.url };
-      return { ok: false as const, error: "Voice returned no audio." };
-    }
-
     const bytes = Buffer.from(await res.arrayBuffer());
-    const mime = ctype.includes("wav")
-      ? "audio/wav"
-      : ctype.includes("ogg")
-        ? "audio/ogg"
-        : "audio/mpeg";
-    return { ok: true as const, audioBase64: bytes.toString("base64"), mime };
+    if (!bytes.byteLength) return { ok: false as const, error: "Voice returned no audio." };
+    return { ok: true as const, audioBase64: bytes.toString("base64"), mime: "audio/wav" };
   });
 
 export const counselAnswer = createServerFn({ method: "POST" })
@@ -56,17 +52,17 @@ export const counselAnswer = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     if (!data.question) return { ok: false as const, error: "Empty question." };
-    const apiKey = process.env.XAI_API_KEY;
+    const apiKey = groqKey();
     if (!apiKey) return { ok: false as const, error: "AI is unavailable." };
 
-    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: CHAT_MODEL,
         max_tokens: 420,
         temperature: 0.2,
         messages: [
