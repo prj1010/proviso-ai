@@ -1,4 +1,5 @@
 import { extractPdfText } from "@/clause/pdf";
+import { markitdownConvert } from "@/clause/markitdown.functions";
 
 const TEXT_EXT = new Set(["txt", "text", "md", "csv", "log"]);
 
@@ -36,14 +37,56 @@ export async function extractDocumentText(file: File): Promise<string> {
   const ext = extensionOf(file.name);
   const type = file.type.toLowerCase();
   const data = await file.arrayBuffer();
+  let local = "";
+  let failure = "Could not read that file.";
+  try {
+    local = await extractLocal(ext, type, data);
+  } catch (err) {
+    failure = err instanceof Error ? err.message : failure;
+  }
+  const office =
+    ext === "pdf" ||
+    ext === "doc" ||
+    ext === "docx" ||
+    type === "application/pdf" ||
+    type === "application/msword" ||
+    type.includes("word");
+  const thin = local.trim().length < 80;
+  if (office && (thin || ext === "doc" || type === "application/msword")) {
+    const converted = await fromMarkitdown(file.name, data);
+    if (
+      converted &&
+      (ext === "doc" || type === "application/msword" || converted.trim().length > local.trim().length)
+    ) {
+      return converted;
+    }
+  }
+  if (local.trim()) return local;
+  throw new Error(failure);
+}
+
+async function extractLocal(ext: string, type: string, data: ArrayBuffer) {
   if (ext === "pdf" || type === "application/pdf") return extractPdfText(data);
   if (ext === "docx" || type.includes("wordprocessingml")) return extractDocx(data);
   if (ext === "doc" || type === "application/msword") return extractLegacyDoc(data);
-  if (ext === "rtf" || type === "application/rtf" || type === "text/rtf") {
-    return rtfToText(decodeText(data));
-  }
+  if (ext === "rtf" || type === "application/rtf" || type === "text/rtf") return rtfToText(decodeText(data));
   if (TEXT_EXT.has(ext) || type.startsWith("text/")) return decodeText(data);
   throw new Error("Use a PDF, Word document (.doc or .docx), or a text file.");
+}
+
+async function fromMarkitdown(name: string, data: ArrayBuffer) {
+  if (data.byteLength > 8_000_000) return "";
+  try {
+    const bytes = new Uint8Array(data);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    const remote = await markitdownConvert({ data: { name, base64: btoa(binary) } });
+    return remote.ok ? remote.text : "";
+  } catch {
+    return "";
+  }
 }
 
 async function extractDocx(data: ArrayBuffer) {
