@@ -1,6 +1,7 @@
 import type { AgreementStatus, AgreementType, RiskLevelType, SectionClauseType } from "@/clause/constants";
 import { decisionFromJudgment, judgeClauses } from "@/clause/jev.functions";
-import { linearRetrieve, chunkDocument } from "@/clause/linearrag";
+import { embedRank } from "@/clause/embed.functions";
+import { linearRetrieve, linearCandidates, chunkDocument } from "@/clause/linearrag";
 import { counselAnswer } from "@/clause/voice.functions";
 
 export interface Party {
@@ -395,6 +396,21 @@ function evidenceFor(agreement: AgreementRecord, question: string) {
   return `${facts}\n\nPassages:\n${passages}`;
 }
 
+async function evidenceForQuestion(agreement: AgreementRecord, question: string) {
+  const facts = evidenceFor(agreement, question).split("\n\nPassages:")[0];
+  const candidates = linearCandidates(agreement.sourceText || "", question, 16);
+  let chosen = candidates.slice(0, 8);
+  try {
+    const ranked = await embedRank({ data: { query: question, passages: candidates } });
+    if (ranked.ok && ranked.order.length) {
+      chosen = ranked.order.map((index) => candidates[index]).filter(Boolean).slice(0, 8);
+    }
+  } catch {
+    /* lexical graph stands */
+  }
+  return `${facts}\n\nPassages:\n${chosen.join("\n\n")}`;
+}
+
 function isSummaryAsk(question: string) {
   return /\b(summari[sz]e|summary|overview|tldr|tl;dr|brief|key points|what is this|explain this)\b/i.test(question);
 }
@@ -514,7 +530,10 @@ export async function answerQuestion(agreement: AgreementRecord, question: strin
     const remote = await counselAnswer({
       data: {
         question,
-        evidence: evidenceFor(agreement, isSummaryAsk(question) ? `${question} liability termination fees privacy governing law refund` : question),
+        evidence: await evidenceForQuestion(
+          agreement,
+          isSummaryAsk(question) ? `${question} liability termination fees privacy governing law refund` : question,
+        ),
         title: agreement.title,
       },
     });

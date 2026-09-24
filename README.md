@@ -2,7 +2,7 @@
 
 Read a contract or a set of terms before you accept it. Upload a PDF, Word, or text file and Proviso pulls the obligations, fees, and risky clauses. Ask a question and the answer cites the wording, including on long documents. Asha, the voice counsel, can brief the open document out loud.
 
-Text files are decoded in the browser. If that text is thin, or the file is an older `.doc`, the server converts it with the JavaScript package `markitdown-js` (no Python). Questions on a long document are answered with a JavaScript linear graph: passages that share terms are retrieved together, then sent to Groq. A file that is not terms, a contract, or an agreement is refused.
+Text files are decoded in the browser. If that text is thin, or the file is an older `.doc`, the server converts it with the JavaScript package `markitdown-js` (no Python). Questions on a long document use a JavaScript graph. `compromise` finds the names, places, and terms (no spaCy). Passages that share those terms are retrieved together, then Groq's `nomic-embed-text-v1_5` re-ranks them. The answer itself comes from Groq chat, not OpenAI.
 
 Two sample agreements are already in the workspace, so you can click around before uploading anything.
 
