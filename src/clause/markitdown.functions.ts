@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,30 @@ const MAX_BYTES = 8_000_000;
 function safeName(name: string) {
   const ext = name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "bin";
   return `lease.${ext}`;
+}
+
+function runMarkitdown(filePath: string) {
+  return new Promise<string>((resolve, reject) => {
+    const script = join(process.cwd(), "scripts", "markitdown-convert.mjs");
+    const child = spawn(process.execPath, [script, filePath], { cwd: process.cwd() });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("MarkItDown took too long."));
+    }, 45000);
+    child.stdout.on("data", (chunk) => out.push(chunk as Buffer));
+    child.stderr.on("data", (chunk) => err.push(chunk as Buffer));
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(Buffer.concat(out).toString("utf8"));
+      else reject(new Error(Buffer.concat(err).toString("utf8").trim() || "MarkItDown failed."));
+    });
+  });
 }
 
 export const markitdownConvert = createServerFn({ method: "POST" })
@@ -27,11 +52,7 @@ export const markitdownConvert = createServerFn({ method: "POST" })
     try {
       const filePath = join(dir, data.name);
       await writeFile(filePath, bytes);
-      const mod = (await import("markitdown-js")) as {
-        default: new () => { convert: (path: string) => Promise<{ textContent?: string }> };
-      };
-      const result = await new mod.default().convert(filePath);
-      const text = String(result?.textContent ?? "").trim();
+      const text = (await runMarkitdown(filePath)).trim();
       if (text.length < 20) return { ok: false as const, error: "MarkItDown found no readable text." };
       return { ok: true as const, text };
     } catch (err) {
