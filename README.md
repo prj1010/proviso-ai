@@ -38,7 +38,7 @@ If you already have `TYPESAFE_API_KEY`, Jev can add a **JEV** badge on a clause 
 
 1. In Render, choose **New → Blueprint** and select this repo.
 2. Set `GROQ_API_KEY` when the dashboard asks for it. `TYPESAFE_API_KEY` is optional and not required.
-3. Deploy. The build is `npm ci && npm run build`. The start command is `npm start`.
+3. Deploy. The build is `npm ci --include=dev && npm run build`, because `NODE_ENV=production` would otherwise skip Vite. The start command is `npm start`.
 
 The Blueprint uses Render's free web service. It sleeps after 15 minutes with no traffic, and the next visit wakes it.
 

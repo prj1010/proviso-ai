@@ -8,7 +8,8 @@ services:
     region: singapore
     branch: main
     autoDeploy: true
-    buildCommand: npm ci && npm run build
+    # NODE_ENV=production is set below. Without --include=dev, npm skips Vite and the React plugin and the build dies.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /
     envVars:
