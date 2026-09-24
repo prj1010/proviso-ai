@@ -1,5 +1,5 @@
 import type { AgreementStatus, AgreementType, RiskLevelType, SectionClauseType } from "@/clause/constants";
-import { citeSections, decisionFromJudgment, judgeClauses } from "@/clause/jev.functions";
+import { decisionFromJudgment, judgeClauses } from "@/clause/jev.functions";
 import { counselAnswer } from "@/clause/voice.functions";
 
 export interface Party {
@@ -466,43 +466,18 @@ function extraTokens(q: string) {
 
 export async function answerQuestion(agreement: AgreementRecord, question: string) {
   const local = localAnswer(agreement, question);
-  let evidence = evidencePack(agreement);
-  let text = local.text;
-  let confident = local.confident;
-  try {
-    const cited = await citeSections({
-      data: {
-        question,
-        sections: agreement.sections.slice(0, 10).map((s) => ({
-          ref: s.ref,
-          heading: s.heading,
-          content: s.content,
-        })),
-      },
-    });
-    if (cited.ok && cited.ref) {
-      const section = agreement.sections.find((s) => s.ref === cited.ref);
-      if (section) {
-        evidence = `${section.ref} ${section.heading}: ${section.content}`;
-        if (!confident) {
-          text = `According to ${section.ref} (${section.heading}): ${section.content}`;
-          confident = cited.noul >= 0.7;
-        }
-      }
-    }
-  } catch {
-    /* primary reader stands */
+  if (/^(hi|hello|hey|thanks|thank you|ok|okay)\b/i.test(question.trim()) && question.trim().length < 40) {
+    return local.text;
   }
-  if (confident && !HINGLISH.test(question)) return text;
   try {
     const remote = await counselAnswer({
-      data: { question, evidence, title: agreement.title },
+      data: { question, evidence: evidencePack(agreement), title: agreement.title },
     });
-    if (remote.ok) return remote.text;
+    if (remote.ok && remote.text) return remote.text;
   } catch {
     /* local fallback */
   }
-  return text;
+  return local.text;
 }
 
 const RULES: { test: RegExp; level: RiskLevelType; reason: string }[] = [

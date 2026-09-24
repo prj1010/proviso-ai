@@ -3,10 +3,7 @@ import { getFileStatusDisplayLabel } from "@/clause/constants";
 import React from "react";
 import {
     IconFilePdf,
-    IconPlus,
-    IconRefresh,
     IconUploadCloud,
-    InlineSpinner,
 } from "./icons/CustomIcons";
 
 interface FilesViewProps {
@@ -102,31 +99,6 @@ export const FilesView: React.FC<FilesViewProps> = ({
                     >
                         Uploaded PDF, Word, and text files.
                     </p>
-                </div>
-
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                    <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={onRefresh}
-                        disabled={loading}
-                        style={{ padding: "8px 14px" }}
-                    >
-                        {loading ? (
-                            <InlineSpinner size={14} />
-                        ) : (
-                            <IconRefresh size={14} />
-                        )}
-                        <span>Refresh</span>
-                    </button>
-
-                    <button
-                        className="btn btn-primary btn-sm"
-                        onClick={onOpenUploadModal}
-                        style={{ padding: "8px 16px" }}
-                    >
-                        <IconPlus size={14} />
-                        <span>Upload file</span>
-                    </button>
                 </div>
             </div>
 
