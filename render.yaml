@@ -10,8 +10,7 @@ services:
     autoDeploy: true
     # Also works if the dashboard still has the old command `npm ci && npm run build`.
     # Vite and Nitro are production dependencies, so NODE_ENV=production does not skip them.
-    # MarkItDown is installed when Python is present. Plain text never needs it.
-    buildCommand: npm ci --include=dev && (python3 -m pip install --target .python-packages 'markitdown[pdf,docx]' || true) && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /
     envVars:

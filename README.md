@@ -2,7 +2,7 @@
 
 Read a lease before you sign it. Upload a PDF, Word, or text file and Proviso pulls the rent, deposit, dates, and parties, then flags the risky clauses. Ask a question and the answer cites the wording. Asha, the voice counsel, can brief the open agreement out loud.
 
-Text files are decoded in the browser (UTF-8, UTF-16, or Windows-1252). If that text is still unreadable, MarkItDown converts the file when Python is available. A file that is not a rental or lease is refused with “Please provide appropriate rental/lease agreement”.
+Text files are decoded in the browser. If that text is thin, or the file is an older `.doc`, the server converts it with the JavaScript package `markitdown-js` (no Python). A file that is not a rental or lease is refused with “Please provide appropriate rental/lease agreement”.
 
 Two sample agreements are already in the workspace, so you can click around before uploading anything.
 

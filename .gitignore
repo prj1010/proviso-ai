@@ -1,4 +1,4 @@
-.python-packages
+node_modules
 .vercel
 .output
 .tanstack
