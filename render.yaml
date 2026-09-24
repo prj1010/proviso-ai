@@ -23,6 +23,6 @@ services:
       # Voice and harder lease answers. Set this in the Render dashboard.
       - key: GROQ_API_KEY
         sync: false
-      # Typed clause scores, citations, and the speak gate.
+      # Optional. Jev is secondary and not required. TypeSafe is not accepting new keys.
       - key: TYPESAFE_API_KEY
         sync: false

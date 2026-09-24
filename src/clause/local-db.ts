@@ -1,6 +1,5 @@
 import type { AgreementStatus, AgreementType, RiskLevelType, SectionClauseType } from "@/clause/constants";
-import { getClauseTypeDisplayLabel } from "@/clause/constants";
-import { citeSections, decisionFromJudgment, judgeClauses, supportClaim } from "@/clause/jev.functions";
+import { citeSections, decisionFromJudgment, judgeClauses } from "@/clause/jev.functions";
 import { counselAnswer } from "@/clause/voice.functions";
 
 export interface Party {
@@ -454,24 +453,13 @@ function extraTokens(q: string) {
   return out;
 }
 
-async function answerWithoutJev(agreement: AgreementRecord, question: string) {
-  const local = localAnswer(agreement, question);
-  if (local.confident && !HINGLISH.test(question)) return local.text;
-  try {
-    const remote = await counselAnswer({
-      data: { question, evidence: evidencePack(agreement), title: agreement.title },
-    });
-    if (remote.ok) return remote.text;
-  } catch {
-    /* local fallback */
-  }
-  return local.text;
-}
-
 export async function answerQuestion(agreement: AgreementRecord, question: string) {
-  let cited: Awaited<ReturnType<typeof citeSections>>;
+  const local = localAnswer(agreement, question);
+  let evidence = evidencePack(agreement);
+  let text = local.text;
+  let confident = local.confident;
   try {
-    cited = await citeSections({
+    const cited = await citeSections({
       data: {
         question,
         sections: agreement.sections.slice(0, 10).map((s) => ({
@@ -481,39 +469,27 @@ export async function answerQuestion(agreement: AgreementRecord, question: strin
         })),
       },
     });
-  } catch {
-    return "Jev did not return a citation, so this question was not answered from the lease.";
-  }
-  if (!cited.ok) {
-    if (cited.code === "unconfigured") return answerWithoutJev(agreement, question);
-    return "Jev did not return a citation, so this question was not answered from the lease.";
-  }
-  if (!cited.ref) {
-    return "This agreement does not address that directly. Jev found no section above the citation threshold.";
-  }
-  const section = agreement.sections.find((s) => s.ref === cited.ref);
-  if (!section) return "Jev cited a section that is not on this agreement.";
-  const quoted = `According to ${section.ref} (${section.heading}): ${section.content}`;
-  const evidence = `${section.ref} ${section.heading}: ${section.content}`;
-  let text = quoted;
-  if (HINGLISH.test(question) || cited.noul < 0.7) {
-    try {
-      const remote = await counselAnswer({
-        data: { question, evidence, title: agreement.title },
-      });
-      if (remote.ok) text = remote.text;
-    } catch {
-      text = quoted;
+    if (cited.ok && cited.ref) {
+      const section = agreement.sections.find((s) => s.ref === cited.ref);
+      if (section) {
+        evidence = `${section.ref} ${section.heading}: ${section.content}`;
+        if (!confident) {
+          text = `According to ${section.ref} (${section.heading}): ${section.content}`;
+          confident = cited.noul >= 0.7;
+        }
+      }
     }
-  }
-  let check: Awaited<ReturnType<typeof supportClaim>>;
-  try {
-    check = await supportClaim({ data: { claim: text, evidence } });
   } catch {
-    check = { ok: false, code: "rejected", error: "Support check failed." };
+    /* primary reader stands */
   }
-  if (!check.ok || check.noul < 0.6) {
-    return `${quoted}\n\nUnverified: the cited wording may not support a paraphrase, so it should not be read aloud.`;
+  if (confident && !HINGLISH.test(question)) return text;
+  try {
+    const remote = await counselAnswer({
+      data: { question, evidence, title: agreement.title },
+    });
+    if (remote.ok) return remote.text;
+  } catch {
+    /* local fallback */
   }
   return text;
 }
@@ -679,28 +655,14 @@ async function applyJev<T extends { sections: ClauseSection[]; risks: RiskItem[]
   } catch {
     return draft;
   }
-  if (!judged.ok) {
-    if (judged.code !== "unconfigured" && draft.summary) {
-      draft.summary = [
-        ...draft.summary,
-        "Jev did not return a decision. These flags are the local reader, not a Jev score.",
-      ].slice(0, 8);
-    }
-    return draft;
-  }
-  const judgedClause = new Set<string>();
+  if (!judged.ok) return draft;
   const jevRisks: RiskItem[] = [];
   for (const judgment of judged.judgments) {
     const decision = decisionFromJudgment(judgment);
     const section = draft.sections.find((s) => s.ref === judgment.ref);
-    if (!section) continue;
+    if (!section || !decision.level || decision.level === "LOW") continue;
     const clause = section.content.slice(0, 500);
-    judgedClause.add(clause);
-    if (decision.type) {
-      section.type = decision.type;
-      section.heading = getClauseTypeDisplayLabel(decision.type);
-    }
-    if (!decision.level || decision.level === "LOW") continue;
+    if (draft.risks.some((r) => r.clause === clause)) continue;
     jevRisks.push({
       id: uid(),
       level: decision.level,
@@ -710,10 +672,7 @@ async function applyJev<T extends { sections: ClauseSection[]; risks: RiskItem[]
     });
   }
   const rank: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-  draft.risks = [
-    ...draft.risks.filter((r) => r.source !== "jev" && !judgedClause.has(r.clause)),
-    ...jevRisks,
-  ]
+  draft.risks = [...draft.risks.filter((r) => r.source !== "jev"), ...jevRisks]
     .sort((a, b) => rank[a.level] - rank[b.level])
     .slice(0, 8);
   return draft;

@@ -1,5 +1,4 @@
 import { briefFor, getAgreement, listAgreements } from "@/clause/local-db";
-import { supportClaim } from "@/clause/jev.functions";
 import { speakClause } from "@/clause/voice.functions";
 import { agreementService } from "@/services";
 import { useRouterState } from "@tanstack/react-router";
@@ -116,30 +115,7 @@ export function VoiceCounsel() {
     if (id) {
       const agreement = getAgreement(id);
       if (agreement && agreement.status === "SUCCESS") {
-        void (async () => {
-          const spoken = briefFor(agreement);
-          try {
-            const check = await supportClaim({
-              data: {
-                claim: spoken,
-                evidence: (agreement.sourceText || agreement.summary.join(" ")).slice(0, 4000),
-              },
-            });
-            if (!check.ok) {
-              if (check.code === "unconfigured") await speak(spoken);
-              else await speak("I will not read this aloud. Jev did not return a support decision.");
-              return;
-            }
-            if (check.noul < 0.6) {
-              await speak("I am not confident this briefing stays inside the lease, so I will not read it aloud. The risks tab has the flagged clauses.");
-              return;
-            }
-          } catch {
-            await speak("I will not read this aloud. Jev did not return a support decision.");
-            return;
-          }
-          await speak(spoken);
-        })();
+        void speak(briefFor(agreement));
         return;
       }
     }
@@ -213,10 +189,6 @@ export function VoiceCounsel() {
         },
       }),
     );
-    if (reply.includes("Unverified:")) {
-      await speak("I am not confident that answer stays inside the lease, so I will not read it aloud.");
-      return;
-    }
     await speak(reply);
   };
 
