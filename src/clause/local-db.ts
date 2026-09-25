@@ -1,5 +1,6 @@
 import type { AgreementStatus, AgreementType, RiskLevelType, SectionClauseType } from "@/clause/constants";
 import { decisionFromJudgment, judgeClauses } from "@/clause/jev.functions";
+import { runCounselAgent } from "@/clause/agent.functions";
 import { embedRank } from "@/clause/embed.functions";
 import { linearRetrieve, linearCandidates, chunkDocument } from "@/clause/linearrag";
 import { counselAnswer } from "@/clause/voice.functions";
@@ -525,6 +526,20 @@ export async function answerQuestion(agreement: AgreementRecord, question: strin
   const local = localAnswer(agreement, question);
   if (/^(hi|hello|hey|thanks|thank you|ok|okay)\b/i.test(question.trim()) && question.trim().length < 40) {
     return local.text;
+  }
+  try {
+    const agent = await runCounselAgent({
+      data: {
+        question,
+        title: agreement.title,
+        sourceText: agreement.sourceText,
+        facts: evidenceFor(agreement, question).split("\n\nPassages:")[0] || "",
+        risks: agreement.risks.map((item) => `${item.level}: ${item.reason}`).join("\n"),
+      },
+    });
+    if (agent.ok && agent.text) return agent.text;
+  } catch {
+    /* single-pass answer stands */
   }
   try {
     const remote = await counselAnswer({
