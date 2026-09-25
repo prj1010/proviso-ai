@@ -5,7 +5,7 @@ import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { linearRetrieve } from "@/clause/linearrag";
 
-const MODEL = "groq/llama-3.3-70b-versatile";
+const MODEL = "openai/gpt-oss-20b";
 
 const INSTRUCTIONS = `You are Proviso, a document counsel operating inside a Mastra harness. You help the user understand one contract or set of terms by searching its passages and reading the risks already flagged on it.
 
