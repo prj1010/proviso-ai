@@ -2,7 +2,7 @@
 
 Read a contract or a set of terms before you accept it. Upload a PDF, Word, or text file and Proviso pulls the obligations, fees, and risky clauses. Ask a question and the answer cites the wording, including on long documents. Asha, the voice counsel, can brief the open document out loud.
 
-Text files are decoded in the browser. If that text is thin, or the file is an older `.doc`, the server converts it with the JavaScript package `markitdown-js` (no Python). A compound question is split. Independent parts run at the same time, then a later step uses those findings in order. A single question stays on a sequential tool loop: searches in one turn run together, and the next turn waits for them.
+Text files are decoded in the browser. If that text is thin, or the file is an older `.doc`, the server converts it with the JavaScript package `markitdown-js` (no Python). Document questions run through Mastra on Groq `llama-3.3-70b-versatile`. A single question uses a Mastra agent with search and risk tools. A compound question uses a Mastra workflow: the parts run with `.parallel()`, then one `.then()` step writes the answer.
 
 Two sample agreements are already in the workspace, so you can click around before uploading anything.
 
