@@ -3,6 +3,8 @@ import { createServerFn } from "@tanstack/react-start";
 const CHAT_MODEL = "llama-3.3-70b-versatile";
 const SPEECH_MODEL = "canopylabs/orpheus-v1-english";
 const SPEECH_VOICE = "hannah";
+const FISH_MODEL = "s2.1-pro-free";
+const FISH_VOICE = "5212eb29e500460391d03af42af6552e";
 
 const SYSTEM_PROMPT = `You are Proviso, a document counsel. You answer from the Evidence in the user message and from nothing else.
 
@@ -24,36 +26,81 @@ function groqKey() {
   return process.env.GROQ_API_KEY?.trim() || "";
 }
 
+function fishKey() {
+  return process.env.FISH_API_KEY?.trim() || "";
+}
+
+function spokenScript(text: string) {
+  return `[calm] ${text.replace(/\s+/g, " ").trim()}`;
+}
+
+async function speakWithFish(text: string) {
+  const apiKey = fishKey();
+  if (!apiKey) return null;
+  const voice = process.env.FISH_VOICE_ID?.trim() || FISH_VOICE;
+  const res = await fetch("https://api.fish.audio/v1/tts", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      model: process.env.FISH_TTS_MODEL?.trim() || FISH_MODEL,
+    },
+    body: JSON.stringify({
+      text: spokenScript(text),
+      reference_id: voice,
+      format: "mp3",
+      latency: "normal",
+      normalize: true,
+      prosody: { speed: 0.96, volume: 0, normalize_loudness: true },
+    }),
+  });
+  if (!res.ok) return null;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (!bytes.byteLength) return null;
+  return { audioBase64: bytes.toString("base64"), mime: "audio/mpeg" as const };
+}
+
+async function speakWithGroq(text: string) {
+  const apiKey = groqKey();
+  if (!apiKey) return null;
+  const res = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: SPEECH_MODEL,
+      voice: SPEECH_VOICE,
+      input: text,
+      response_format: "wav",
+    }),
+  });
+  if (!res.ok) return null;
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (!bytes.byteLength) return null;
+  return { audioBase64: bytes.toString("base64"), mime: "audio/wav" as const };
+}
+
 export const speakClause = createServerFn({ method: "POST" })
   .validator((input: { text?: string }) => ({
     text: clip(input?.text, 900).trim(),
   }))
   .handler(async ({ data }) => {
     if (!data.text) return { ok: false as const, error: "Nothing to say." };
-    const apiKey = groqKey();
-    if (!apiKey) return { ok: false as const, error: "Voice is unavailable." };
-
-    const res = await fetch("https://api.groq.com/openai/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: SPEECH_MODEL,
-        voice: SPEECH_VOICE,
-        input: data.text,
-        response_format: "wav",
-      }),
-    });
-
-    if (!res.ok) {
-      return { ok: false as const, error: `Voice is unavailable (${res.status}).` };
+    try {
+      const fish = await speakWithFish(data.text);
+      if (fish) return { ok: true as const, ...fish };
+    } catch {
+      /* Groq Orpheus stands */
     }
-
-    const bytes = Buffer.from(await res.arrayBuffer());
-    if (!bytes.byteLength) return { ok: false as const, error: "Voice returned no audio." };
-    return { ok: true as const, audioBase64: bytes.toString("base64"), mime: "audio/wav" };
+    try {
+      const groq = await speakWithGroq(data.text);
+      if (groq) return { ok: true as const, ...groq };
+    } catch {
+      /* browser speech stands */
+    }
+    return { ok: false as const, error: "Voice is unavailable." };
   });
 
 export const counselAnswer = createServerFn({ method: "POST" })
