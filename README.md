@@ -10,27 +10,28 @@ Two sample agreements are already in the workspace, so you can click around befo
 
 ```bash
 npm install
-GROQ_API_KEY=your_groq_key npm run dev
+GROQ_API_KEY=your_groq_key FISH_API_KEY=your_fish_key npm run dev
 ```
 
 Open [http://localhost:8080](http://localhost:8080). Sign in with any email. The code is **482910**.
 
-## Groq
+## Speech
 
-Chat and speech both use your Groq key. Nothing is sent until you ask a question or press speak.
+Asha speaks with Fish Audio when `FISH_API_KEY` is set. That is the natural voice path. If Fish is missing or fails, Groq Orpheus speaks. If both fail, the browser speaks.
 
 | Use | Model |
 | --- | --- |
-| Lease answers | `llama-3.3-70b-versatile` |
-| Asha's voice | `canopylabs/orpheus-v1-english` (voice `hannah`) |
+| Lease answers | Groq `llama-3.3-70b-versatile` |
+| Asha's voice (preferred) | Fish Audio `s2.1-pro-free`, warm conversational English |
+| Asha's voice (fallback) | Groq `canopylabs/orpheus-v1-english` (voice `hannah`) |
 
-Set `GROQ_API_KEY` in the environment. Without it, the page still works: answers stay on the local reader, and speech falls back to the browser.
+Get a Fish key at [fish.audio](https://fish.audio). Optional: set `FISH_VOICE_ID` to any public model id from the Voice Library. Optional: set `FISH_TTS_MODEL` if you are on a paid Fish plan and want `s2.1-pro`.
 
-Straight questions about rent, notice, and the deposit are answered locally and do not call Groq. Groq is used when the local reader is unsure, or when the question is in Hinglish or another language.
+Set `GROQ_API_KEY` in the environment. Without either key, the page still works: answers stay on the local reader, and speech falls back to the browser.
 
 ## Jev
 
-Jev is optional and secondary. TypeSafe is not accepting new keys, so the product does not depend on it. The keyword reader flags clauses, and Groq writes and speaks.
+Jev is optional and secondary. TypeSafe is not accepting new keys, so the product does not depend on it. The keyword reader flags clauses, and Groq writes. Fish or Groq speaks.
 
 If you already have `TYPESAFE_API_KEY`, Jev can add a **JEV** badge on a clause the keyword reader missed, and it can point a weak answer at a section. It does not replace those flags, and it does not block chat or Asha.
 
@@ -39,7 +40,7 @@ If you already have `TYPESAFE_API_KEY`, Jev can add a **JEV** badge on a clause 
 [render.yaml](render.yaml) is a Render Blueprint.
 
 1. In Render, choose **New → Blueprint** and select this repo.
-2. Set `GROQ_API_KEY` when the dashboard asks for it. `TYPESAFE_API_KEY` is optional and not required.
+2. Set `GROQ_API_KEY` when the dashboard asks for it. Set `FISH_API_KEY` for natural speech. `TYPESAFE_API_KEY` is optional and not required.
 3. Deploy. Render is running `npm ci` with `NODE_ENV=production`, so Vite, Nitro, and `@vitejs/plugin-react` are production dependencies. The start command is `npm start`.
 
 The Blueprint uses Render's free web service. It sleeps after 15 minutes with no traffic, and the next visit wakes it.
