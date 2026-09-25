@@ -10,6 +10,8 @@ How you work:
 - Use only this document. Do not use outside knowledge of the law or of other contracts.
 - Call search_passages before you state a fact. If the passages are not enough, call it again with the defined term, the clause number, or a narrower question.
 - Call list_risks when the user asks what is risky, unfair, or one-sided.
+- Independent questions in one turn run together. Call every search you need in the same step.
+- A later step may use those results. Do that only when the next lookup depends on the earlier one.
 - Stop calling tools once you can answer. Then reply in plain text.
 - Never invent a date, amount, name, or clause. If the tool results do not say it, say "This document does not say."
 - An exception ("unless", "except", "provided that", "subject to") controls over the general rule when both are in the results.
@@ -54,6 +56,77 @@ function clip(value: unknown, max: number) {
   return String(value ?? "").slice(0, max);
 }
 
+function planQuestion(question: string) {
+  const stages = question
+    .split(/\s+then\s+/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const head = stages[0] || question;
+  const sequential = stages.slice(1).join(" ").trim();
+  let parallel = head
+    .split(/\s*;\s*|\s+\balso\b\s+/i)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 8);
+  if (parallel.length < 2 && /\band\b/i.test(head)) {
+    const sides = head.split(/\s+\band\b\s+/i).map((part) => part.trim()).filter(Boolean);
+    const looksLikeTask = (part: string) =>
+      part.length > 10 && /\b(what|who|when|where|how|which|is|does|can|summar|list|find|show)\b/i.test(part);
+    if (sides.length > 1 && sides.length <= 4 && looksLikeTask(sides[0]) && sides.every((part) => part.length > 10)) {
+      parallel = sides;
+    }
+  }
+  if (parallel.length < 2) parallel = [question];
+  return { parallel: parallel.slice(0, 4), sequential };
+}
+
+async function groqChat(
+  apiKey: string,
+  messages: AgentMessage[],
+  options: { tools?: boolean; forceAnswer?: boolean },
+) {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0,
+      max_tokens: 600,
+      messages,
+      ...(options.tools
+        ? { tools: TOOLS, tool_choice: options.forceAnswer ? "none" : "auto" }
+        : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(`AI error ${res.status}`);
+  const body = (await res.json()) as { choices?: { message?: AgentMessage }[] };
+  return body.choices?.[0]?.message ?? null;
+}
+
+async function parallelFinding(
+  apiKey: string,
+  title: string,
+  facts: string,
+  sourceText: string,
+  query: string,
+) {
+  const passages = linearRetrieve(sourceText, query, 5) || "No passage matched.";
+  const message = await groqChat(
+    apiKey,
+    [
+      {
+        role: "system",
+        content: `${INSTRUCTIONS}\n\nDocument: ${title}\n${facts}\nAnswer only this one part. Quote the sentence you used.`,
+      },
+      { role: "user", content: `Part: ${query}\n\nPassages:\n${passages.slice(0, 5000)}` },
+    ],
+    {},
+  );
+  return String(message?.content ?? "").trim() || "This document does not say.";
+}
+
 function runTool(name: string, args: { query?: string }, sourceText: string, risks: string) {
   if (name === "search_passages") {
     const found = linearRetrieve(sourceText, String(args.query || ""), 6);
@@ -76,6 +149,31 @@ export const runCounselAgent = createServerFn({ method: "POST" })
     if (!data.question) return { ok: false as const, error: "Empty question." };
     if (!apiKey) return { ok: false as const, error: "AI is unavailable." };
 
+    const plan = planQuestion(data.question);
+    if (plan.parallel.length > 1 || plan.sequential) {
+      try {
+        const findings = await Promise.all(
+          plan.parallel.map((query) => parallelFinding(apiKey, data.title, data.facts, data.sourceText, query)),
+        );
+        const brief = findings.map((finding, index) => `Part ${index + 1} (${plan.parallel[index]}):\n${finding}`).join("\n\n");
+        const follow = plan.sequential
+          ? `Using only the findings below, do this next: ${plan.sequential}`
+          : `Using only the findings below, answer the original question: ${data.question}`;
+        const closer = await groqChat(
+          apiKey,
+          [
+            { role: "system", content: `${INSTRUCTIONS}\n\nDocument: ${data.title}\n${data.facts}` },
+            { role: "user", content: `${follow}\n\n${brief}` },
+          ],
+          {},
+        );
+        const text = String(closer?.content ?? "").trim();
+        if (text) return { ok: true as const, text, steps: plan.parallel.length + 1, mode: "parallel-then-sequential" as const };
+      } catch {
+        /* sequential loop stands */
+      }
+    }
+
     const messages: AgentMessage[] = [
       {
         role: "system",
@@ -85,45 +183,39 @@ export const runCounselAgent = createServerFn({ method: "POST" })
     ];
 
     for (let step = 0; step < MAX_STEPS; step += 1) {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          temperature: 0,
-          max_tokens: 600,
-          tools: TOOLS,
-          tool_choice: step === MAX_STEPS - 1 ? "none" : "auto",
-          messages,
-        }),
-      });
-      if (!res.ok) return { ok: false as const, error: `AI error ${res.status}` };
-      const body = (await res.json()) as { choices?: { message?: AgentMessage }[] };
-      const message = body.choices?.[0]?.message;
-      if (!message) return { ok: false as const, error: "Empty answer." };
-      const calls = message.tool_calls ?? [];
-      if (!calls.length) {
-        const text = String(message.content ?? "").trim();
-        if (!text) return { ok: false as const, error: "Empty answer." };
-        return { ok: true as const, text, steps: step + 1 };
-      }
-      messages.push({ role: "assistant", content: message.content ?? "", tool_calls: calls });
-      for (const call of calls) {
-        let args: { query?: string } = {};
-        try {
-          args = JSON.parse(call.function?.arguments || "{}") as { query?: string };
-        } catch {
-          args = {};
-        }
-        messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: runTool(call.function?.name || "", args, data.sourceText, data.risks).slice(0, 7000),
+      let resMessage: AgentMessage | null = null;
+      try {
+        resMessage = await groqChat(apiKey, messages, {
+          tools: true,
+          forceAnswer: step === MAX_STEPS - 1,
         });
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : "AI error" };
       }
+      if (!resMessage) return { ok: false as const, error: "Empty answer." };
+      const calls = resMessage.tool_calls ?? [];
+      if (!calls.length) {
+        const text = String(resMessage.content ?? "").trim();
+        if (!text) return { ok: false as const, error: "Empty answer." };
+        return { ok: true as const, text, steps: step + 1, mode: "sequential" as const };
+      }
+      messages.push({ role: "assistant", content: resMessage.content ?? "", tool_calls: calls });
+      const outputs = await Promise.all(
+        calls.map(async (call) => {
+          let args: { query?: string } = {};
+          try {
+            args = JSON.parse(call.function?.arguments || "{}") as { query?: string };
+          } catch {
+            args = {};
+          }
+          return {
+            role: "tool",
+            tool_call_id: call.id,
+            content: runTool(call.function?.name || "", args, data.sourceText, data.risks).slice(0, 7000),
+          };
+        }),
+      );
+      messages.push(...outputs);
     }
     return { ok: false as const, error: "The agent stopped before it answered." };
   });
