@@ -25,6 +25,12 @@ services:
       # Voice and harder lease answers. Set this in the Render dashboard.
       - key: GROQ_API_KEY
         sync: false
+      # Natural spoken briefs. Set this in the Render dashboard.
+      - key: FISH_API_KEY
+        sync: false
+      # Optional. Defaults to a warm English conversational voice.
+      - key: FISH_VOICE_ID
+        sync: false
       # Optional. Jev is secondary and not required. TypeSafe is not accepting new keys.
       - key: TYPESAFE_API_KEY
         sync: false
